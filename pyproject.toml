@@ -1,0 +1,80 @@
+[tool.poetry]
+name = "gait-analysis"
+version = "0.2.0"
+description = "Computer vision gait analysis with multiple pose estimation backends"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "gait_analysis", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.24.0"
+opencv-python = "^4.8.0"
+
+# Core YOLO support (default backend)
+ultralytics = {version = "^8.0.0", optional = true}
+
+# OpenPose support (requires manual installation)
+# pyopenpose is not on PyPI - install from source
+
+# PocketPose support (ONNX-based)
+onnxruntime = {version = "^1.15.0", optional = true}
+onnxruntime-gpu = {version = "^1.15.0", optional = true}
+
+# SDPose support (HuggingFace)
+transformers = {version = "^4.30.0", optional = true}
+torch = {version = "^2.0.0", optional = true}
+torchvision = {version = "^0.15.0", optional = true}
+
+# AlphaPose support (uses torch/torchvision from sdpose)
+
+[tool.poetry.extras]
+# Default YOLO backend
+yolo = ["ultralytics"]
+
+# OpenPose - requires manual build, no pip deps
+openpose = []
+
+# PocketPose - lightweight ONNX models
+pocketpose = ["onnxruntime"]
+pocketpose-gpu = ["onnxruntime-gpu"]
+
+# SDPose - HuggingFace whole-body models  
+sdpose = ["transformers", "torch", "torchvision"]
+
+# AlphaPose - HALPE whole-body models
+alphapose = ["torch", "torchvision"]
+
+# All backends (except OpenPose which requires manual install)
+all = ["ultralytics", "onnxruntime", "transformers", "torch", "torchvision"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-mock = "^3.11.0"
+jupyter = "^1.0.0"
+ipykernel = "^6.25.0"
+
+[tool.poetry.scripts]
+gait-analyze = "gait_analysis.main:main"
+gait-analyze-advanced = "gait_analysis.advanced_main:main"
+gait-analyze-multi = "gait_analysis.multi_backend_main:main"
+gait-backends = "gait_analysis.backend_registry:print_backends_table"
+gait-smoke-test = "gait_analysis.smoke_test:main"
+gait-compatibility-test = "tests.test_compatibility:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --ignore=models/ --ignore=data/"
+markers = [
+    "slow: marks tests as slow",
+    "compatibility: marks compatibility tests requiring sample video",
+    "integration: marks integration tests requiring external dependencies",
+]
+
+[build-system]
+requires = ["poetry-core","setuptools", "wheel", "numpy", "cython"]
+build-backend = "poetry.core.masonry.api"
+

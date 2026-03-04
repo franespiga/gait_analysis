@@ -4,10 +4,9 @@ A computer vision project for analyzing walking patterns using pose estimation. 
 
 ## Features
 
-- **Multi-Backend Pose Estimation**: Support for multiple pose detection models:
+- **YOLO-Based Pose Estimation**: Support for YOLO pose detection models:
   - **YOLO COCO**: Standard YOLOv8-pose with 17 keypoints (ankle only)
   - **YOLO Lower Body**: Fine-tuned model with 10 keypoints including heel and toe
-  - **OpenPose**: CMU OpenPose with 25+ body keypoints including detailed foot keypoints
 - **Accurate Step Classification**: With heel/toe keypoints, precisely detects:
   - **Heel Strike** (Correct): Heel touches ground first, then toe
   - **Toe Strike** (Incorrect): Toe touches ground first (toe walking)
@@ -21,6 +20,35 @@ A computer vision project for analyzing walking patterns using pose estimation. 
 - **JSON Output**: Complete analysis results saved to JSON
 - **Real-time Visualization**: Optional window showing keypoints and step classification
 - **Video Output**: Save annotated videos with pose overlay
+
+### Production pipeline (training + inference)
+
+The project supports a **production-quality pipeline** for overground mobile phone videos (side or behind, with shoes):
+
+- **Training**: Train a YOLO-family keypoint model (e.g. YOLOv8 pose) with **foot keypoints** (COCO-WholeBody style: L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_HEEL, R_BIG_TOE, R_SMALL_TOE). Scripts: dataset preparation, training with configurable hyperparameters, evaluation, optional ONNX export.
+- **Inference**: Person detection + pose → **temporal smoothing** (Savitzky-Golay) → **gait event detection** (Initial Contact IC, Toe-Off TO) → **contact classification** (heel-strike / toe-walk / flat) using foot pitch and contact timing.
+- **Outputs**: Per-event CSV, per-step CSV, summary JSON (cadence, step/stride time, stance, swing, step/stride length, speed, symmetry, variability). Optional annotated video.
+- **Gait metrics**: Cadence (steps/min), step time & stride time (mean, std), stance time, swing time, duty factor, step length & stride length (with calibration), walking speed (m/s), symmetry indices (L vs R), variability (CV%).
+
+**CLI commands** (from project root):
+
+```bash
+python scripts/prepare_dataset.py [--dataset-dir ...] [--coco-annot ...]
+python scripts/train_pose.py [--config config/training.yaml] [--data ...] [--resume] [--export-onnx]
+# Or Ultralytics-aligned training (device/resume/batch):
+python scripts/train_pose_ultralytics.py [--config config/training.yaml] [--data ...] [--resume] [--export-onnx] [--device 0] [--batch -1]
+python scripts/infer_video.py path/to/video.mp4 [--config config/inference.yaml] [--output-dir results]
+```
+
+Configs: `config/training.yaml`, `config/inference.yaml`, `config/keypoint_schema.yaml`. Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
+
+#### Ultralytics-aligned training (`train_pose_ultralytics.py`)
+
+`train_pose_ultralytics.py` uses the same config and dataset as `train_pose.py` but follows [Ultralytics Train mode](https://docs.ultralytics.com/modes/train/) for device, resume, and batch:
+
+- **`--device`**: `0` (single GPU), `0,1` (multi-GPU), `-1` (idle GPU), `mps` (Apple Silicon), `cpu`, or `auto` (omit; default).
+- **`--resume`**: Loads `{project}/{name}/weights/last.pt` and calls `model.train(resume=True)`. Use after an interrupted or previous run.
+- **`--batch`**: Integer (e.g. `16`), `-1` (auto batch size, e.g. 60% GPU memory), or float (e.g. `0.7` for utilization fraction). Config keys `batch` and `device` are supported in `config/training.yaml`.
 
 ## Installation
 
@@ -115,21 +143,15 @@ gait-analyze-multi path/to/video.mp4
 
 **Using YOLO Lower Body (with heel/toe keypoints) - RECOMMENDED:**
 ```bash
-gait-analyze-multi path/to/video.mp4 --backend yolo_lower --model path/to/best.pt
+gait-analyze-multi path/to/video.mp4 --backend yolo_lower
 ```
+(Uses `models/yolo_lower/best.pt` by default; override with `--model` if needed.)
 
 The YOLO Lower Body model provides 10 keypoints including heel and toe, enabling accurate heel-strike vs toe-walking detection. Download the model from [Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints](https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints).
 
-**Using OpenPose (detailed foot keypoints):**
-```bash
-gait-analyze-multi path/to/video.mp4 --backend openpose --openpose-path C:/path/to/openpose
-```
-
-OpenPose provides 25 body keypoints plus detailed foot keypoints (heels, big toes, small toes). See [OpenPose installation](https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation/0_index.md).
-
 With visualization and custom output:
 ```bash
-gait-analyze-multi path/to/video.mp4 --backend yolo_lower --model best.pt --show --output-dir results
+gait-analyze-multi path/to/video.mp4 --backend yolo_lower --show --output-dir results
 ```
 
 ### Available Options
@@ -166,17 +188,13 @@ gait-analyze-multi path/to/video.mp4 --backend yolo_lower --model best.pt --show
 | `--backend` | Pose estimation backend (see below) | yolo_coco |
 | `--model` | Model path/name | yolov8n-pose.pt |
 | `--device` | Inference device (auto, cpu, cuda) | auto |
-| `--openpose-path` | Path to OpenPose installation | None |
 
-**Available Backends:**
+**Available Backends (YOLO-based only):**
 
 | Backend | Keypoints | Heel/Toe | Description |
 |---------|-----------|----------|-------------|
-| `yolo_coco` | 17 | ❌ | Standard YOLO COCO format (ankle only) |
+| `yolo_coco` / `yolov8` | 17 | ❌ | Standard YOLO COCO format (ankle only) |
 | `yolo_lower` | 10 | ✅ | Fine-tuned for lower body with heel/toe |
-| `openpose` | 25+ | ✅ | CMU OpenPose with detailed foot keypoints |
-| `alphapose` | 136 | ✅ | HALPE-136 whole-body with detailed feet |
-| `alphapose_body` | 26 | ✅ | HALPE-26 body-focused with feet |
 
 ### Python API
 
@@ -333,7 +351,6 @@ gait_analysis/
 │       ├── keypoint_config.py      # Keypoint configurations for each model
 │       ├── base_detector.py        # Abstract detector interface
 │       ├── yolo_detector.py        # YOLO COCO and Lower Body detectors
-│       ├── openpose_detector.py    # OpenPose detector wrapper
 │       ├── detector.py             # Legacy YOLO COCO detector
 │       ├── analyzer.py             # Basic gait analysis logic
 │       ├── angle_analyzer.py       # Enhanced analysis with angles
@@ -373,17 +390,6 @@ Fine-tuned model from [yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints
 
 Having actual heel and toe positions enables precise step classification.
 
-#### OpenPose (25+ keypoints)
-CMU OpenPose from [CMU-Perceptual-Computing-Lab/openpose](https://github.com/CMU-Perceptual-Computing-Lab/openpose):
-- Hips: 9 (right), 12 (left)
-- Knees: 10 (right), 13 (left)
-- Ankles: 11 (right), 14 (left)
-- Heels: 21 (left), 24 (right)
-- Big Toe: 19 (left), 22 (right)
-- Small Toe: 20 (left), 23 (right)
-
-See [keypoint documentation](https://chingswy.github.io/easymocap-public-doc/database/2_keypoints.html) for details.
-
 ### Step Detection
 
 Steps are detected by tracking foot phases:
@@ -394,7 +400,7 @@ A step is registered when transitioning from swing to stance.
 
 ### Step Classification
 
-**With Heel/Toe Keypoints (YOLO Lower Body, OpenPose):**
+**With Heel/Toe Keypoints (YOLO Lower Body):**
 
 Classification is based on actual heel and toe Y-positions at contact:
 - **Heel Strike**: Heel Y > Toe Y (heel lower/contacts first) - CORRECT
@@ -421,90 +427,64 @@ Available standard pose models (download automatically on first use):
 
 ### YOLO Lower Body Model
 
-Download from [GitHub repository](https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints):
+Download from [GitHub repository](https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints) and place in `models/yolo_lower/`:
 ```bash
-# Download best.pt from the repository
-wget https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints/raw/main/best.pt
+mkdir -p models/yolo_lower
+wget -O models/yolo_lower/best.pt https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints/raw/main/best.pt
 ```
 
-Use with:
+The `yolo_lower` backend uses `models/yolo_lower/best.pt` by default:
 ```bash
-gait-analyze-multi video.mp4 --backend yolo_lower --model best.pt
+gait-analyze-multi video.mp4 --backend yolo_lower
 ```
 
-### OpenPose Installation
+### Foot keypoint dataset (CMU) – alternative downloads
 
-OpenPose must be installed separately. Follow the [installation guide](https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation/0_index.md).
+The [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/) (6 keypoints: heel, big toe, small toe per foot) is used for training foot keypoint models. The official CMU download URLs are often unavailable. Use the following alternatives.
 
-After installation, set the environment variable or use the `--openpose-path` flag:
-```bash
-# Set environment variable
-set OPENPOSE_PATH=C:\path\to\openpose
+**1) Download annotations via script (recommended)**
 
-# Or use flag
-gait-analyze-multi video.mp4 --backend openpose --openpose-path C:\path\to\openpose
-```
-
-### AlphaPose Installation
-
-AlphaPose provides HALPE whole-body keypoints (136 points) including detailed foot keypoints (heel, big toe, small toe). This is the recommended backend for accurate gait analysis.
-
-#### Option 1: Use Pre-downloaded Models (Recommended)
-
-The models are pre-downloaded in `models/AlphaPose/`. AlphaPose still requires the Python package:
+The project script fetches annotation JSONs from a GitHub mirror:
 
 ```bash
-# Install AlphaPose from source (required for model loading)
-git clone https://github.com/MVIG-SJTU/AlphaPose.git
-cd AlphaPose
-pip install -e .
+# Download train + val annotation JSONs to data/foot_cmu/annotations/
+python scripts/download_foot_dataset.py --output-dir data/foot_cmu/annotations
+
+# Or only print URLs for manual download
+python scripts/download_foot_dataset.py --print-urls
 ```
 
-The backend will automatically find models in:
-- `models/AlphaPose/pretrained_models/halpe136_fast50_regression_256x192.pth` (HALPE-136, whole-body)
-- `models/AlphaPose/pretrained_models/halpe26_fast_res50_256x192.pth` (HALPE-26, body only)
-- `models/AlphaPose/detector/yolo/data/yolov3-spp.weights` (person detector)
+**2) Annotation sources**
 
-#### Option 2: Set Environment Variable
+| Source | Format | Notes |
+|--------|--------|--------|
+| **GitHub mirror** | JSON | [Eva20150932/coco-foot-and-leg](https://github.com/Eva20150932/coco-foot-and-leg) – repo contains `person_keypoints_train2017_foot_v1.json` and `person_keypoints_val2017_foot_v1.json` (raw files or clone). |
+| **Official CMU** | ZIP | `http://posefs1.perception.cs.cmu.edu/OpenPose/datasets/foot/` – often down. |
 
-```bash
-# Point to your own AlphaPose installation
-set ALPHAPOSE_DIR=C:\path\to\AlphaPose
+**3) COCO 2017 images (required)**
 
-# Run with AlphaPose
-gait-analyze-multi video.mp4 --backend alphapose
-```
+Annotations refer to COCO 2017 images. Download from one of:
 
-#### Option 3: Full Installation (Linux/WSL2)
+- **Official:** [Train (18GB)](http://images.cocodataset.org/zips/train2017.zip), [Val (1GB)](http://images.cocodataset.org/zips/val2017.zip)
+- **Academic Torrents:** [COCO 2017](https://academictorrents.com/details/74dec1dd21ae4994dfd9069f9cb0443eb960c962)
 
-For the full AlphaPose experience with all features:
+Place images so your dataset has `images/train/` and `images/val/` (e.g. `train2017/` and `val2017/` contents). Then run `scripts/prepare_dataset.py` with `--coco-annot` pointing to the train JSON and `--images-dir` to the folder containing the image subfolders. Note: CMU keypoint order (L big toe, L small toe, L heel, R big toe, R small toe, R heel) may require a reorder step to match `config/keypoint_schema.yaml` (L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_*); see the dataset docs or add a CMU-specific conversion if needed.
 
-```bash
-# Create conda environment
-conda create -n alphapose python=3.7 -y
-conda activate alphapose
+### Streamlit app
 
-# Install PyTorch
-conda install pytorch torchvision pytorch-cuda=11.8 -c pytorch -c nvidia
+A web UI for gait analysis (upload video or use webcam) is in `app/`. It shows keypoints from the waist down and a live legend with frame count, step count, steps per minute, and average step length (pixels).
 
-# Clone and build
-git clone https://github.com/MVIG-SJTU/AlphaPose.git
-cd AlphaPose
-pip install cython
-python setup.py build develop
+1. Install the app extra (includes Streamlit):
+   ```bash
+   poetry install -E yolo -E app
+   ```
 
-# Download models from Model Zoo
-# https://github.com/MVIG-SJTU/AlphaPose/blob/master/docs/MODEL_ZOO.md
-```
+2. From the project root, run:
+   ```bash
+   poetry run streamlit run app/gait_streamlit.py
+   ```
 
-#### AlphaPose Keypoints
-
-| Model | Keypoints | Feet | Use Case |
-|-------|-----------|------|----------|
-| HALPE-136 | 136 | ✅ Heel, big toe, small toe | Full body + hands + face + feet |
-| HALPE-26 | 26 | ✅ Heel, big toe, small toe | Body + feet (faster) |
-
-**Note**: If AlphaPose is not properly installed, the backend falls back to YOLOv8-pose which does NOT have foot keypoints.
+3. In the sidebar: choose **Upload video** (then use “Browse” to select a file) or **Webcam** (if multiple cameras exist, pick one). Click **Start Gait Analysis** to run. Use **Stop** to end webcam or video playback.
 
 ## Development
 
@@ -556,11 +536,11 @@ poetry run pytest tests/test_compatibility.py -v -k "yolov8"
 # Test only YOLO Lower Body backend
 poetry run pytest tests/test_compatibility.py -v -k "yolo_lower"
 
-# Test only OpenPose backend
-poetry run pytest tests/test_compatibility.py -v -k "openpose"
+# Test only YOLO Lower backend
+poetry run pytest tests/test_compatibility.py -v -k "yolo_lower"
 
 # Test multiple specific backends
-poetry run pytest tests/test_compatibility.py -v -k "yolov8 or alphapose"
+poetry run pytest tests/test_compatibility.py -v -k "yolov8 or yolo_lower"
 ```
 
 #### Running with CLI (More Control)
@@ -570,7 +550,7 @@ poetry run pytest tests/test_compatibility.py -v -k "yolov8 or alphapose"
 python -m tests.test_compatibility --backends yolov8 yolo_lower
 
 # Run with specific video and backends
-python -m tests.test_compatibility --video data/test/walk.mp4 --backends yolov8 openpose
+python -m tests.test_compatibility --video data/test/walk.mp4 --backends yolov8 yolo_lower
 
 # Custom output directory
 python -m tests.test_compatibility --output-dir checks/my_test
@@ -581,32 +561,27 @@ python -m tests.test_compatibility --output-dir checks/my_test
 For backends that require custom model files (like `yolo_lower`):
 
 ```bash
-# Via pytest command line
-poetry run pytest tests/test_compatibility.py -v --yolo-lower-model=models/best.pt
+# Via pytest command line (default is models/yolo_lower/best.pt)
+poetry run pytest tests/test_compatibility.py -v --yolo-lower-model=models/yolo_lower/best.pt
 
 # Via environment variable (Windows CMD)
-set GAIT_YOLO_LOWER_MODEL=models/best.pt
+set GAIT_YOLO_LOWER_MODEL=models/yolo_lower/best.pt
 poetry run pytest tests/test_compatibility.py -v
 
 # Via environment variable (PowerShell)
-$env:GAIT_YOLO_LOWER_MODEL="models/best.pt"
+$env:GAIT_YOLO_LOWER_MODEL="models/yolo_lower/best.pt"
 poetry run pytest tests/test_compatibility.py -v
 
 # Via CLI with model paths
-python -m tests.test_compatibility --model-path yolo_lower=models/best.pt
-python -m tests.test_compatibility --model-path yolo_lower=models/best.pt --model-path openpose=C:/openpose
+python -m tests.test_compatibility --model-path yolo_lower=models/yolo_lower/best.pt
 ```
 
 #### Environment Variables for Model Paths
 
 | Variable | Backend | Description |
 |----------|---------|-------------|
-| `GAIT_YOLO_LOWER_MODEL` | `yolo_lower` | Path to YOLO lower body model (`best.pt`) |
 | `GAIT_YOLOV8_MODEL` | `yolov8`, `yolo_coco` | Path to YOLOv8 pose model |
-| `OPENPOSE_PATH` | `openpose` | Path to OpenPose installation directory |
-| `GAIT_POCKETPOSE_MODEL` | `pocketpose` | PocketPose model name |
-| `GAIT_SDPOSE_MODEL` | `sdpose` | SDPose HuggingFace model name |
-| `GAIT_ALPHAPOSE_MODEL` | `alphapose` | AlphaPose model path |
+| `GAIT_YOLO_LOWER_MODEL` | `yolo_lower` | Path to YOLO lower body model (default: `models/yolo_lower/best.pt`) |
 
 #### Compatibility Test Output
 
@@ -620,8 +595,6 @@ checks/20260218_1430/
 ├── yolo_lower/
 │   ├── gait_analysis.json
 │   └── annotated_video.mp4
-├── openpose/
-│   └── ...
 └── compatibility_report.json    # Summary of all backends
 ```
 
@@ -660,7 +633,6 @@ MIT License - See LICENSE file for details.
 ## Acknowledgments
 
 - [Ultralytics](https://ultralytics.com/) for the YOLOv8 pose estimation model
-- [CMU Perceptual Computing Lab](https://github.com/CMU-Perceptual-Computing-Lab/openpose) for OpenPose
 - [Yankai Zhao](https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints) for the fine-tuned YOLO lower body model
 - OpenCV for video processing and visualization
 

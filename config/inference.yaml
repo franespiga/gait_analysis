@@ -1,0 +1,54 @@
+# Inference config for gait analysis pipeline
+# Used by scripts/infer_video.py
+
+# Model
+model_path: models/foot_pose/best.pt  # or yolov8m-pose.pt for COCO + custom head
+backend: yolo_foot  # or yolo_coco / yolo_lower for legacy
+device: auto
+conf_threshold: 0.5
+iou_threshold: 0.7
+
+# Person selection
+person_select: highest_confidence  # highest_confidence | largest_bbox | center
+
+# Temporal smoothing (Savitzky-Golay)
+smoothing:
+  enabled: true
+  method: savgol
+  window_length: 11  # odd, FPS-aware if set per-video
+  polyorder: 3
+
+# Gait event detection (IC = initial contact, TO = toe-off)
+events:
+  # Velocity threshold (pixels/frame) for stance vs swing
+  velocity_threshold: 2.0
+  # Min frames in stability window to declare contact
+  stability_frames: 5
+  # Min step duration (ms) to filter spurious events
+  min_step_duration_ms: 200
+  # FPS-aware: derive window from FPS if not set
+  fps_aware: true
+
+# Contact classification (heel-strike / toe-walk / flat)
+contact:
+  # Pitch angle threshold (deg): heel lower than toe => heel-strike
+  pitch_threshold_deg: 8.0
+  # Time delta (ms): heel stabilizes first vs toe
+  stabilization_delta_ms: 50
+  # Flat: both stabilize within this window (ms)
+  flat_window_ms: 80
+
+# Calibration for step length and speed (m)
+# Options: none | reference_height_px | scale_factor
+calibration:
+  method: none  # none | reference_height_px | scale_factor_m_per_px
+  reference_height_px: null  # e.g. 200 (pixels for known height in frame)
+  reference_height_m: 1.7   # known height in meters
+  scale_factor_m_per_px: null  # direct: meters per pixel
+
+# Output
+output_dir: results
+save_per_event_csv: true
+save_per_step_csv: true
+save_summary_json: true
+save_annotated_video: false

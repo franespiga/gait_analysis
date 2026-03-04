@@ -1,0 +1,55 @@
+# Training config for YOLOv8 pose model with foot keypoints
+# Used by scripts/train_pose.py and scripts/train_pose_ultralytics.py
+
+# Model
+model: yolov8npose.pt
+imgsz: 320
+epochs: 100
+batch: 16
+# batch: -1   # auto (e.g. 60% GPU); supported by train_pose_ultralytics.py
+patience: 20
+
+# device: 0   # train_pose_ultralytics.py: 0, 0,1, -1, mps, cpu, auto
+
+# Optimizer
+optimizer: auto
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+
+# Data
+data: null  # set via CLI or dataset YAML path
+dataset_yaml: null  # e.g. data/foot_pose_dataset.yaml
+
+# Augmentation (perspective, flip; motion blur via custom augment if needed)
+augment: true
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+shear: 0.0
+perspective: 0.0001  # perspective augmentation
+flipud: 0.0
+fliplr: 0.5         # horizontal flip
+mosaic: 0.0
+mixup: 0.0
+
+# Resume / fine-tune
+resume: false
+pretrained: true
+
+# Export
+export_onnx: false
+export_dir: runs/pose/export
+
+# Paths
+project: runs/pose
+name: foot_pose
+save: true
+exist_ok: false

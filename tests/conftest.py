@@ -3,12 +3,11 @@ Pytest configuration and shared fixtures for gait analysis tests.
 
 Model paths can be configured via:
 1. Environment variables:
-   - GAIT_YOLO_LOWER_MODEL=models/best.pt
+   - GAIT_YOLO_LOWER_MODEL=models/yolo_lower/best.pt
    - GAIT_YOLOV8_MODEL=yolov8n-pose.pt
-   - OPENPOSE_PATH=C:/openpose
    
 2. Pytest command line:
-   pytest tests/test_compatibility.py --yolo-lower-model=models/best.pt
+   pytest tests/test_compatibility.py --yolo-lower-model=models/yolo_lower/best.pt
 """
 
 import os
@@ -22,19 +21,13 @@ def pytest_addoption(parser):
         "--yolo-lower-model",
         action="store",
         default=None,
-        help="Path to YOLO lower body model (e.g., models/best.pt)"
+        help="Path to YOLO lower body model (e.g., models/yolo_lower/best.pt)"
     )
     parser.addoption(
         "--yolov8-model",
         action="store",
         default=None,
         help="Path to YOLOv8 pose model"
-    )
-    parser.addoption(
-        "--openpose-path",
-        action="store",
-        default=None,
-        help="Path to OpenPose installation"
     )
 
 
@@ -57,9 +50,6 @@ def pytest_configure(config):
     
     if config.getoption("--yolov8-model"):
         os.environ["GAIT_YOLOV8_MODEL"] = config.getoption("--yolov8-model")
-    
-    if config.getoption("--openpose-path"):
-        os.environ["OPENPOSE_PATH"] = config.getoption("--openpose-path")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -96,5 +86,5 @@ def yolo_lower_model(request):
     return (
         request.config.getoption("--yolo-lower-model") or 
         os.environ.get("GAIT_YOLO_LOWER_MODEL") or
-        "models/best.pt"
+        "models/yolo_lower/best.pt"
     )

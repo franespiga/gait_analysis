@@ -10,7 +10,6 @@ from gait_analysis.keypoint_config import (
     KeypointIndices,
     YOLO_COCO_KEYPOINTS,
     YOLO_LOWER_BODY_KEYPOINTS,
-    OPENPOSE_KEYPOINTS,
     get_keypoint_config
 )
 from gait_analysis.base_detector import GaitKeypoints
@@ -39,15 +38,6 @@ class TestKeypointConfig:
         assert config.right_toe == 9
         assert config.has_heel_toe()
     
-    def test_openpose_has_heel_toe(self):
-        """Test that OpenPose config has heel/toe."""
-        config = OPENPOSE_KEYPOINTS
-        assert config.left_heel == 21
-        assert config.right_heel == 24
-        assert config.left_toe == 19
-        assert config.right_toe == 22
-        assert config.has_heel_toe()
-    
     def test_get_keypoint_config(self):
         """Test factory function."""
         coco = get_keypoint_config(DetectorBackend.YOLO_COCO)
@@ -55,9 +45,6 @@ class TestKeypointConfig:
         
         lower = get_keypoint_config(DetectorBackend.YOLO_LOWER_BODY)
         assert lower == YOLO_LOWER_BODY_KEYPOINTS
-        
-        openpose = get_keypoint_config(DetectorBackend.OPENPOSE)
-        assert openpose == OPENPOSE_KEYPOINTS
 
 
 class TestGaitKeypoints:
@@ -321,11 +308,11 @@ class TestDetectorBackendEnum:
     def test_enum_values(self):
         """Test enum values."""
         assert DetectorBackend.YOLO_COCO.value == "yolo_coco"
+        assert DetectorBackend.YOLOV8.value == "yolov8"
         assert DetectorBackend.YOLO_LOWER_BODY.value == "yolo_lower"
-        assert DetectorBackend.OPENPOSE.value == "openpose"
     
     def test_enum_comparison(self):
         """Test enum comparison."""
         assert DetectorBackend.YOLO_COCO == DetectorBackend.YOLO_COCO
-        assert DetectorBackend.YOLO_COCO != DetectorBackend.OPENPOSE
+        assert DetectorBackend.YOLO_COCO != DetectorBackend.YOLO_LOWER_BODY
 

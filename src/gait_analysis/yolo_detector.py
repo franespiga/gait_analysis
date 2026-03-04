@@ -24,6 +24,8 @@ from .keypoint_config import (
 )
 
 
+
+
 class YOLODetector(BaseDetector):
     """
     YOLO-based pose detector supporting both COCO and lower-body models.
@@ -33,7 +35,7 @@ class YOLODetector(BaseDetector):
         self,
         model_path: str = "yolov8n-pose.pt",
         backend: DetectorBackend = DetectorBackend.YOLO_COCO,
-        device: str = "auto"
+        device: str = "cpu"
     ):
         """
         Initialize the YOLO detector.
@@ -41,7 +43,7 @@ class YOLODetector(BaseDetector):
         Args:
             model_path: Path to YOLO model weights
                 - For COCO: "yolov8n-pose.pt", "yolov8s-pose.pt", etc.
-                - For Lower Body: path to fine-tuned "best.pt"
+                - For Lower Body: path to fine-tuned model (default: models/yolo_lower/best.pt)
             backend: Which keypoint configuration to use
             device: Inference device ('auto', 'cpu', 'cuda', etc.)
         """
@@ -158,7 +160,7 @@ class YOLOCocoDetector(YOLODetector):
     def __init__(
         self,
         model_name: str = "yolov8n-pose.pt",
-        device: str = "auto"
+        device: str = "cpu"
     ):
         """
         Initialize with a standard YOLO pose model.
@@ -189,13 +191,13 @@ class YOLOLowerBodyDetector(YOLODetector):
     def __init__(
         self,
         model_path: str,
-        device: str = "auto"
+        device: str = "cpu"
     ):
         """
         Initialize with the fine-tuned lower body model.
         
         Args:
-            model_path: Path to the fine-tuned model (e.g., "best.pt")
+            model_path: Path to the fine-tuned model (default: models/yolo_lower/best.pt)
             device: Inference device
         """
         super().__init__(
@@ -208,7 +210,7 @@ class YOLOLowerBodyDetector(YOLODetector):
 def create_yolo_detector(
     model_path: str = "yolov8n-pose.pt",
     backend: DetectorBackend = DetectorBackend.YOLO_COCO,
-    device: str = "auto"
+    device: str = "cpu"
 ) -> YOLODetector:
     """
     Factory function to create the appropriate YOLO detector.

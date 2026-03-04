@@ -60,12 +60,7 @@ SAMPLE_VIDEO_PATHS = [
 DEFAULT_MODEL_PATHS = {
     "yolov8": "yolov8n-pose.pt",
     "yolo_coco": "yolov8n-pose.pt",
-    "yolo_lower": "models/best.pt",  # Fine-tuned lower body model
-    "openpose": None,  # Uses OpenPose installation path
-    "pocketpose": "pocketpose-wholebody",
-    "sdpose": "jiajiaya1011/SDPose_wholebody",
-    "alphapose": None,
-    "alphapose_body": None,
+    "yolo_lower": "models/yolo_lower/best.pt",  # Fine-tuned lower body model
 }
 
 # Environment variable names for model paths
@@ -73,10 +68,6 @@ MODEL_PATH_ENV_VARS = {
     "yolov8": "GAIT_YOLOV8_MODEL",
     "yolo_coco": "GAIT_YOLOV8_MODEL",
     "yolo_lower": "GAIT_YOLO_LOWER_MODEL",
-    "openpose": "OPENPOSE_PATH",
-    "pocketpose": "GAIT_POCKETPOSE_MODEL",
-    "sdpose": "GAIT_SDPOSE_MODEL",
-    "alphapose": "GAIT_ALPHAPOSE_MODEL",
 }
 
 # Global model path overrides (set via CLI or programmatically)
@@ -117,34 +108,6 @@ SKELETON_KEYPOINT_FOCUS = {
                       "left_toe", "right_toe"],
         "has_feet": True,
         "description": "Lower-body 10: Full feet with heel/toe"
-    },
-    "body25": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe", "left_small_toe", "right_small_toe"],
-        "has_feet": True,
-        "description": "Body_25: Detailed feet (heel, big toe, small toe)"
-    },
-    "halpe26": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "HALPE-26: Body-focused with feet keypoints"
-    },
-    "halpe136": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "HALPE-136: Comprehensive whole-body with feet"
-    },
-    "wholebody133": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "Wholebody-133: Full body with feet keypoints"
     },
 }
 
@@ -187,41 +150,6 @@ BACKEND_KEYPOINT_FOCUS = {
                       "left_toe", "right_toe"],
         "has_feet": True,
         "description": "Lower-body 10: Full feet with heel/toe"
-    },
-    "openpose": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe", "left_small_toe", "right_small_toe"],
-        "has_feet": True,
-        "description": "Body_25: Detailed feet (heel, big toe, small toe)"
-    },
-    "pocketpose": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "Wholebody-133: Full body with feet keypoints"
-    },
-    "sdpose": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "Wholebody-133: Full body with feet keypoints"
-    },
-    "alphapose": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "HALPE-136: Comprehensive whole-body with feet"
-    },
-    "alphapose_body": {
-        "keypoints": ["left_hip", "right_hip", "left_knee", "right_knee",
-                      "left_ankle", "right_ankle", "left_heel", "right_heel",
-                      "left_toe", "right_toe"],
-        "has_feet": True,
-        "description": "HALPE-26: Body-focused with feet keypoints"
     },
 }
 
@@ -425,10 +353,7 @@ def analyze_video_with_backend(
         # Create backend with model path
         backend_kwargs = {}
         if model_path:
-            if backend_name == "openpose":
-                backend_kwargs["openpose_path"] = model_path
-            else:
-                backend_kwargs["model_path"] = model_path
+            backend_kwargs["model_path"] = model_path
         
         backend = create_backend(backend_name, **backend_kwargs)
         actual_skeleton = backend.skeleton_name
@@ -643,58 +568,6 @@ class TestCompatibility:
         
         metrics = result["gait_metrics"]
         assert metrics["has_foot_keypoints"], "Lower body model should have foot keypoints"
-    
-    def test_openpose_compatibility(self):
-        """Test OpenPose Body_25 backend."""
-        result = self._run_backend_test("openpose")
-        
-        if result["error"] and "Missing dependencies" in result["error"]:
-            pytest.skip(result["error"])
-        
-        assert result["success"], f"OpenPose failed: {result['error']}"
-        
-        metrics = result["gait_metrics"]
-        assert metrics["has_foot_keypoints"], "OpenPose should have detailed foot keypoints"
-    
-    def test_pocketpose_compatibility(self):
-        """Test PocketPose whole-body backend."""
-        result = self._run_backend_test("pocketpose")
-        
-        if result["error"] and "Missing dependencies" in result["error"]:
-            pytest.skip(result["error"])
-        
-        assert result["success"], f"PocketPose failed: {result['error']}"
-        assert result["gait_metrics"]["has_foot_keypoints"]
-    
-    def test_sdpose_compatibility(self):
-        """Test SDPose HuggingFace backend."""
-        result = self._run_backend_test("sdpose")
-        
-        if result["error"] and "Missing dependencies" in result["error"]:
-            pytest.skip(result["error"])
-        
-        assert result["success"], f"SDPose failed: {result['error']}"
-        assert result["gait_metrics"]["has_foot_keypoints"]
-    
-    def test_alphapose_compatibility(self):
-        """Test AlphaPose HALPE-136 backend."""
-        result = self._run_backend_test("alphapose")
-        
-        if result["error"] and "Missing dependencies" in result["error"]:
-            pytest.skip(result["error"])
-        
-        assert result["success"], f"AlphaPose failed: {result['error']}"
-        assert result["gait_metrics"]["has_foot_keypoints"]
-    
-    def test_alphapose_body_compatibility(self):
-        """Test AlphaPose HALPE-26 body backend."""
-        result = self._run_backend_test("alphapose_body")
-        
-        if result["error"] and "Missing dependencies" in result["error"]:
-            pytest.skip(result["error"])
-        
-        assert result["success"], f"AlphaPose Body failed: {result['error']}"
-        assert result["gait_metrics"]["has_foot_keypoints"]
 
 
 # ============================================================================
@@ -780,17 +653,15 @@ def main():
 Examples:
   python -m tests.test_compatibility
   python -m tests.test_compatibility --video data/sample_video.mp4
-  python -m tests.test_compatibility --backends yolov8 openpose
+  python -m tests.test_compatibility --backends yolov8 yolo_lower
   python -m tests.test_compatibility --output-dir checks/custom
   
   # Specify model paths for specific backends
-  python -m tests.test_compatibility --model-path yolo_lower=models/best.pt
-  python -m tests.test_compatibility --model-path yolo_lower=models/best.pt --model-path openpose=C:/openpose
+  python -m tests.test_compatibility --model-path yolo_lower=models/yolo_lower/best.pt
 
 Environment Variables:
-  GAIT_YOLO_LOWER_MODEL   Path to YOLO lower body model (default: models/best.pt)
+  GAIT_YOLO_LOWER_MODEL   Path to YOLO lower body model (default: models/yolo_lower/best.pt)
   GAIT_YOLOV8_MODEL       Path to YOLOv8 pose model
-  OPENPOSE_PATH           Path to OpenPose installation
         """
     )
     
@@ -816,7 +687,7 @@ Environment Variables:
         "--model-path", "-m",
         action="append",
         metavar="BACKEND=PATH",
-        help="Set model path for a backend (e.g., yolo_lower=models/best.pt)"
+        help="Set model path for a backend (e.g., yolo_lower=models/yolo_lower/best.pt)"
     )
     
     args = parser.parse_args()
@@ -829,7 +700,7 @@ Environment Variables:
                 set_model_path(backend.strip(), path.strip())
             else:
                 print(f"Warning: Invalid model-path format: {model_spec}", file=sys.stderr)
-                print("  Expected format: BACKEND=PATH (e.g., yolo_lower=models/best.pt)", file=sys.stderr)
+                print("  Expected format: BACKEND=PATH (e.g., yolo_lower=models/yolo_lower/best.pt)", file=sys.stderr)
     
     try:
         results = run_compatibility_tests(

@@ -353,6 +353,15 @@ class HeelToeFootTracker:
                 min_knee = min(recent)
                 max_knee = max(recent)
         
+        # Contact position at step start (ankle) for step length
+        contact_x, contact_y = None, None
+        for p in self.positions:
+            if p[0] >= self.phase_start_frame:
+                contact_x, contact_y = p[6], p[7]  # ankle_x, ankle_y
+                break
+        if contact_x is None and self.positions:
+            contact_x, contact_y = self.positions[-1][6], self.positions[-1][7]
+        
         if duration > 100:  # Minimum step duration
             step = HeelToeStep(
                 foot=self.side,
@@ -369,7 +378,9 @@ class HeelToeFootTracker:
                 max_knee_flexion=max_knee,
                 heel_y_at_contact=heel_y,
                 toe_y_at_contact=toe_y,
-                heel_toe_diff=heel_toe_diff
+                heel_toe_diff=heel_toe_diff,
+                contact_ankle_x=contact_x,
+                contact_ankle_y=contact_y
             )
             self.steps.append(step)
     

@@ -48,15 +48,10 @@ class TestBackendRegistry:
     
     def test_registry_has_default_backends(self):
         """Test that default backends are registered."""
-        # YOLOv8 should always be registered
+        # YOLO backends should always be registered
         assert "yolov8" in _BACKEND_REGISTRY
         assert "yolo_coco" in _BACKEND_REGISTRY
         assert "yolo_lower" in _BACKEND_REGISTRY
-        
-        # New backends should also be registered
-        assert "pocketpose" in _BACKEND_REGISTRY
-        assert "sdpose" in _BACKEND_REGISTRY
-        assert "alphapose" in _BACKEND_REGISTRY
     
     def test_list_backends_all(self):
         """Test listing all backends including unavailable."""

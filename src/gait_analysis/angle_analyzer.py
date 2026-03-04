@@ -276,8 +276,12 @@ class EnhancedStep:
     min_knee_flexion: float = 180.0         # Minimum angle during stance (max flexion)
     max_knee_flexion: float = 180.0         # Maximum angle during stance (max extension)
     
+    # Contact position (ankle at initial contact) for step length estimation (pixels)
+    contact_ankle_x: Optional[float] = None
+    contact_ankle_y: Optional[float] = None
+    
     def to_dict(self) -> dict:
-        return {
+        d = {
             "foot": self.foot,
             "step_type": self.step_type.value,
             "start_frame": self.start_frame,
@@ -291,6 +295,10 @@ class EnhancedStep:
             "min_knee_flexion": round(self.min_knee_flexion, 2),
             "max_knee_flexion": round(self.max_knee_flexion, 2)
         }
+        if self.contact_ankle_x is not None and self.contact_ankle_y is not None:
+            d["contact_ankle_x"] = round(self.contact_ankle_x, 2)
+            d["contact_ankle_y"] = round(self.contact_ankle_y, 2)
+        return d
 
 
 @dataclass
@@ -504,6 +512,15 @@ class EnhancedFootTracker:
                 min_knee = min(recent_angles)
                 max_knee = max(recent_angles)
         
+        # Contact position at step start (for step length)
+        contact_x, contact_y = None, None
+        for p in self.positions:
+            if p[0] >= self.phase_start_frame:
+                contact_x, contact_y = p[2], p[3]
+                break
+        if contact_x is None and self.positions:
+            contact_x, contact_y = self.positions[-1][2], self.positions[-1][3]
+        
         if duration > 100:  # Minimum step duration
             step = EnhancedStep(
                 foot=self.side,
@@ -517,7 +534,9 @@ class EnhancedFootTracker:
                 stance_time_ms=stance_time,
                 knee_flexion_at_contact=knee_at_contact,
                 min_knee_flexion=min_knee,
-                max_knee_flexion=max_knee
+                max_knee_flexion=max_knee,
+                contact_ankle_x=contact_x,
+                contact_ankle_y=contact_y
             )
             self.steps.append(step)
     
@@ -590,6 +609,18 @@ class EnhancedGaitAnalysisResult:
     correct_percentage: float = 0.0
     incorrect_percentage: float = 0.0
     flat_foot_percentage: float = 0.0
+    average_step_length_px: float = 0.0  # Average distance between consecutive contacts (pixels)
+    
+    def _step_lengths_from_steps(self, steps: list) -> list[float]:
+        """Compute step lengths (pixels) between consecutive same-foot contacts."""
+        lengths = []
+        for i in range(1, len(steps)):
+            a, b = steps[i - 1], steps[i]
+            ax, ay = getattr(a, "contact_ankle_x", None), getattr(a, "contact_ankle_y", None)
+            bx, by = getattr(b, "contact_ankle_x", None), getattr(b, "contact_ankle_y", None)
+            if ax is not None and ay is not None and bx is not None and by is not None:
+                lengths.append(float(np.hypot(bx - ax, by - ay)))
+        return lengths
     
     def _compute_step_metrics(self, steps: list[EnhancedStep]) -> dict:
         """Compute metrics for a list of steps."""
@@ -620,6 +651,12 @@ class EnhancedGaitAnalysisResult:
         self.correct_percentage = (self.correct_steps / self.total_steps * 100) if self.total_steps > 0 else 0
         self.incorrect_percentage = (self.incorrect_steps / self.total_steps * 100) if self.total_steps > 0 else 0
         self.flat_foot_percentage = (self.flat_foot_steps / self.total_steps * 100) if self.total_steps > 0 else 0
+        
+        # Average step length (pixels) from consecutive same-foot contacts
+        left_lengths = self._step_lengths_from_steps(self.left_steps)
+        right_lengths = self._step_lengths_from_steps(self.right_steps)
+        all_lengths = left_lengths + right_lengths
+        self.average_step_length_px = float(np.mean(all_lengths)) if all_lengths else 0.0
         
         # Per-foot step categorization
         left_correct = [s for s in self.left_steps if s.step_type == StepType.HEEL_STRIKE]
@@ -670,7 +707,8 @@ class EnhancedGaitAnalysisResult:
                 "flat_foot_steps": self.flat_foot_steps,
                 "correct_percentage": round(self.correct_percentage, 1),
                 "incorrect_percentage": round(self.incorrect_percentage, 1),
-                "flat_foot_percentage": round(self.flat_foot_percentage, 1)
+                "flat_foot_percentage": round(self.flat_foot_percentage, 1),
+                "average_step_length_px": round(self.average_step_length_px, 2)
             },
             "metrics": metrics,
             "detailed_steps": {

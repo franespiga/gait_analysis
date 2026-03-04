@@ -1,18 +1,12 @@
 """
 Gait Analysis - Computer Vision based gait analysis using pose estimation.
 
-Supports multiple pose estimation backends:
+Supports YOLO-based pose estimation backends:
 - YOLOv8: Standard YOLOv8-pose with 17 COCO keypoints
 - YOLO Lower Body: Fine-tuned model with heel/toe keypoints (10 points)
-- OpenPose: CMU OpenPose with Body_25 format (25 points with feet)
-- PocketPose: Lightweight ONNX whole-body model (133 points)
-- SDPose: HuggingFace whole-body model (133 points)
-- AlphaPose: HALPE whole-body keypoints (136 points)
 
 References:
 - YOLO Lower Body: https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints
-- OpenPose: https://github.com/CMU-Perceptual-Computing-Lab/openpose
-- AlphaPose: https://github.com/MVIG-SJTU/AlphaPose
 """
 
 __version__ = "0.2.0"
@@ -55,6 +49,19 @@ from .backend_registry import (
     print_backends_table,
 )
 
+# Production gait pipeline (IC/TO, metrics, inference)
+from .gait_events import GaitEvent, ContactType, detect_ic_to, classify_contact, events_to_contact_types
+from .gait_metrics import StepRecord, GaitSummary, build_step_records, compute_summary
+from .smoothing import smooth_keypoints, fps_aware_window_length
+from .inference_pipeline import (
+    PipelineConfig,
+    run_pipeline,
+    select_main_person,
+    raw_to_six_keypoints,
+    events_to_dataframe,
+    step_records_to_dataframe,
+)
+
 __all__ = [
     # Legacy
     "KeypointDetector", 
@@ -95,5 +102,23 @@ __all__ = [
     "check_backend_available",
     "get_available_backend_names",
     "print_backends_table",
+    # Production pipeline
+    "GaitEvent",
+    "ContactType",
+    "detect_ic_to",
+    "classify_contact",
+    "events_to_contact_types",
+    "StepRecord",
+    "GaitSummary",
+    "build_step_records",
+    "compute_summary",
+    "smooth_keypoints",
+    "fps_aware_window_length",
+    "PipelineConfig",
+    "run_pipeline",
+    "select_main_person",
+    "raw_to_six_keypoints",
+    "events_to_dataframe",
+    "step_records_to_dataframe",
 ]
 

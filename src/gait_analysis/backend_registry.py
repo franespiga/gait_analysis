@@ -129,7 +129,7 @@ def create_backend(name: str, **kwargs) -> PoseBackend:
     Create a pose backend instance by name.
     
     Args:
-        name: Backend name (e.g., 'yolov8', 'openpose', 'alphapose')
+        name: Backend name (e.g., 'yolov8', 'yolo_lower')
         **kwargs: Backend-specific configuration
         
     Returns:
@@ -193,7 +193,7 @@ def _create_yolov8_backend(
 
 
 def _create_yolo_lower_backend(
-    model_path: str = "best.pt",
+    model_path: str = "models/yolo_lower/best.pt",
     device: str = "auto",
     conf_threshold: float = 0.25,
     **kwargs
@@ -207,76 +207,12 @@ def _create_yolo_lower_backend(
     )
 
 
-def _create_openpose_backend(
-    openpose_path: Optional[str] = None,
-    model_pose: str = "BODY_25",
-    net_resolution: str = "-1x368",
-    **kwargs
-) -> PoseBackend:
-    """Create OpenPose backend."""
-    from .backends.openpose_backend import OpenPoseBackend
-    return OpenPoseBackend(
-        openpose_path=openpose_path,
-        model_pose=model_pose,
-        net_resolution=net_resolution
-    )
-
-
-def _create_pocketpose_backend(
-    model_name: str = "pocketpose-wholebody",
-    device: str = "auto",
-    conf_threshold: float = 0.3,
-    **kwargs
-) -> PoseBackend:
-    """Create PocketPose backend."""
-    from .backends.pocketpose_backend import PocketPoseBackend
-    return PocketPoseBackend(
-        model_name=model_name,
-        device=device,
-        conf_threshold=conf_threshold
-    )
-
-
-def _create_sdpose_backend(
-    model_name: str = "jiajiaya1011/SDPose_wholebody",
-    device: str = "auto",
-    conf_threshold: float = 0.3,
-    **kwargs
-) -> PoseBackend:
-    """Create SDPose backend."""
-    from .backends.sdpose_backend import SDPoseBackend
-    return SDPoseBackend(
-        model_name=model_name,
-        device=device,
-        conf_threshold=conf_threshold
-    )
-
-
-def _create_alphapose_backend(
-    config_file: Optional[str] = None,
-    checkpoint: Optional[str] = None,
-    device: str = "auto",
-    conf_threshold: float = 0.3,
-    detector: str = "yolov8",
-    **kwargs
-) -> PoseBackend:
-    """Create AlphaPose backend."""
-    from .backends.alphapose_backend import AlphaPoseBackend
-    return AlphaPoseBackend(
-        config_file=config_file,
-        checkpoint=checkpoint,
-        device=device,
-        conf_threshold=conf_threshold,
-        detector=detector
-    )
-
-
 # ============================================================================
-# Register All Backends
+# Register All Backends (YOLO only)
 # ============================================================================
 
 def _register_all_backends():
-    """Register all supported backends."""
+    """Register all supported backends (YOLO-based only)."""
     
     # YOLOv8 (standard COCO-17)
     register_backend(
@@ -309,64 +245,6 @@ def _register_all_backends():
         requires=["ultralytics"],
         extras_name="yolo",
         factory=_create_yolo_lower_backend
-    )
-    
-    # OpenPose
-    register_backend(
-        name="openpose",
-        description="CMU OpenPose with Body_25 format (includes feet)",
-        skeleton_name="body25",
-        has_feet=True,
-        requires=["pyopenpose"],  # Requires manual installation
-        extras_name="openpose",
-        factory=_create_openpose_backend
-    )
-    
-    # PocketPose
-    register_backend(
-        name="pocketpose",
-        description="PocketPose lightweight whole-body model",
-        skeleton_name="wholebody133",
-        has_feet=True,
-        requires=["onnxruntime"],
-        extras_name="pocketpose",
-        factory=_create_pocketpose_backend
-    )
-    
-    # SDPose
-    register_backend(
-        name="sdpose",
-        description="SDPose whole-body from HuggingFace (133 keypoints)",
-        skeleton_name="wholebody133",
-        has_feet=True,
-        requires=["transformers", "torch"],
-        extras_name="sdpose",
-        factory=_create_sdpose_backend
-    )
-    
-    # AlphaPose
-    register_backend(
-        name="alphapose",
-        description="AlphaPose with HALPE whole-body keypoints (136 points)",
-        skeleton_name="halpe136",
-        has_feet=True,
-        requires=["torch", "torchvision"],
-        extras_name="alphapose",
-        factory=_create_alphapose_backend
-    )
-    
-    # AlphaPose body-only variant
-    register_backend(
-        name="alphapose_body",
-        description="AlphaPose with HALPE-26 body keypoints",
-        skeleton_name="halpe26",
-        has_feet=True,
-        requires=["torch", "torchvision"],
-        extras_name="alphapose",
-        factory=lambda **kw: _create_alphapose_backend(
-            config_file=kw.pop("config_file", None) or "halpe26",
-            **kw
-        )
     )
 
 

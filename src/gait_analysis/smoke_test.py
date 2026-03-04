@@ -9,7 +9,7 @@ Runs a quick test of each available backend to verify:
 Usage:
     gait-smoke-test
     gait-smoke-test --image test.jpg
-    gait-smoke-test --backends yolov8 pocketpose
+    gait-smoke-test --backends yolov8 yolo_lower
 """
 
 import argparse
@@ -222,7 +222,7 @@ def main():
 Examples:
   gait-smoke-test                       # Test all available backends
   gait-smoke-test --image test.jpg      # Test with specific image
-  gait-smoke-test --backends yolov8 pocketpose  # Test specific backends
+  gait-smoke-test --backends yolov8 yolo_lower  # Test specific backends
   gait-smoke-test --quiet               # Minimal output
         """
     )

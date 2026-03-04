@@ -1,14 +1,12 @@
 """
-Multi-backend gait analysis CLI supporting different pose estimation models.
+Multi-backend gait analysis CLI supporting YOLO-based pose estimation.
 
 Supports:
 1. YOLO COCO (default) - Standard YOLOv8-pose, ankle only
 2. YOLO Lower Body - Fine-tuned model with heel/toe keypoints
-3. OpenPose - CMU OpenPose with detailed foot keypoints
 
 References:
 - YOLO Lower Body: https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints
-- OpenPose: https://github.com/CMU-Perceptual-Computing-Lab/openpose
 """
 
 import argparse
@@ -22,6 +20,7 @@ import cv2
 
 from .keypoint_config import DetectorBackend
 from .base_detector import BaseDetector, GaitKeypoints
+from .detector import FrameKeypoints
 from .yolo_detector import YOLOCocoDetector, YOLOLowerBodyDetector, create_yolo_detector
 from .angle_analyzer import EnhancedGaitAnalyzer
 from .heel_toe_analyzer import HeelToeGaitAnalyzer
@@ -49,139 +48,28 @@ def get_timestamped_output_dir(base_dir: str, video_name: str) -> Path:
 def create_detector(
     backend: str,
     model_path: str,
-    device: str = "auto",
-    openpose_path: Optional[str] = None
+    device: str = "auto"
 ) -> BaseDetector:
     """
-    Create detector based on backend selection.
+    Create detector based on backend selection (YOLO-based only).
     
     Args:
-        backend: Backend name ('yolov8', 'yolo_coco', 'yolo_lower', 'openpose', 
-                              'pocketpose', 'sdpose', 'alphapose')
+        backend: Backend name ('yolov8', 'yolo_coco', 'yolo_lower')
         model_path: Path to model weights
         device: Inference device
-        openpose_path: Path to OpenPose installation (for openpose backend)
         
     Returns:
         Configured detector instance
     """
-    # Legacy/YOLO backends using existing detectors
     if backend in ("yolo_coco", "yolov8"):
         return YOLOCocoDetector(model_name=model_path, device=device)
     
     elif backend == "yolo_lower":
         return YOLOLowerBodyDetector(model_path=model_path, device=device)
     
-    elif backend == "openpose":
-        from .openpose_detector import OpenPoseDetector
-        return OpenPoseDetector(openpose_path=openpose_path)
-    
-    # New backends using unified PoseBackend interface
-    elif backend in ("pocketpose", "sdpose", "alphapose"):
-        from .backend_registry import create_backend
-        return UnifiedBackendAdapter(
-            create_backend(backend, model_path=model_path, device=device)
-        )
-    
     else:
-        available = ["yolov8", "yolo_coco", "yolo_lower", "openpose", "pocketpose", "sdpose", "alphapose"]
+        available = ["yolov8", "yolo_coco", "yolo_lower"]
         raise ValueError(f"Unknown backend: {backend}. Available: {available}")
-
-
-class UnifiedBackendAdapter(BaseDetector):
-    """
-    Adapter to use new PoseBackend interface with existing BaseDetector API.
-    
-    This allows the new backends (PocketPose, SDPose, AlphaPose) to be used
-    with the existing gait analysis pipeline.
-    """
-    
-    def __init__(self, pose_backend):
-        """
-        Initialize adapter with a PoseBackend instance.
-        
-        Args:
-            pose_backend: A PoseBackend instance (PocketPose, SDPose, etc.)
-        """
-        from .keypoint_config import DetectorBackend, get_keypoint_config
-        from .keypoint_schema import KeypointSchemaMapper
-        
-        self._pose_backend = pose_backend
-        self._schema_mapper = KeypointSchemaMapper(
-            pose_backend.skeleton_name,
-            conf_threshold=pose_backend.conf_threshold
-        )
-        
-        # Map skeleton name to DetectorBackend
-        backend_map = {
-            "coco17": DetectorBackend.YOLO_COCO,
-            "coco_lower10": DetectorBackend.YOLO_LOWER_BODY,
-            "body25": DetectorBackend.OPENPOSE,
-            "wholebody133": DetectorBackend.POCKETPOSE,
-            "halpe26": DetectorBackend.ALPHAPOSE_BODY,
-            "halpe136": DetectorBackend.ALPHAPOSE,
-        }
-        
-        skeleton = pose_backend.skeleton_name
-        self._backend_enum = backend_map.get(skeleton, DetectorBackend.YOLO_COCO)
-        self._keypoint_config = get_keypoint_config(self._backend_enum)
-    
-    @property
-    def backend(self):
-        return self._backend_enum
-    
-    @property
-    def keypoint_config(self):
-        return self._keypoint_config
-    
-    def detect(
-        self,
-        frame,
-        frame_number: int,
-        timestamp_ms: float,
-        conf_threshold: float = 0.5
-    ):
-        """Detect keypoints using the unified backend."""
-        from .base_detector import GaitKeypoints
-        
-        # Run pose estimation
-        result = self._pose_backend.predict(frame)
-        
-        if result.num_persons == 0:
-            return None
-        
-        # Map to canonical gait keypoints
-        canonical = self._schema_mapper.map_pose_result(
-            result,
-            person_idx=0,
-            frame_number=frame_number,
-            timestamp_ms=timestamp_ms
-        )
-        
-        if canonical is None:
-            return None
-        
-        # Convert to GaitKeypoints (existing format)
-        return GaitKeypoints(
-            frame_number=frame_number,
-            timestamp_ms=timestamp_ms,
-            left_hip=canonical.left_hip,
-            right_hip=canonical.right_hip,
-            left_knee=canonical.left_knee,
-            right_knee=canonical.right_knee,
-            left_ankle=canonical.left_ankle,
-            right_ankle=canonical.right_ankle,
-            left_heel=canonical.left_heel,
-            right_heel=canonical.right_heel,
-            left_toe=canonical.left_toe,
-            right_toe=canonical.right_toe,
-            raw_keypoints=result.keypoints[0] if result.num_persons > 0 else None,
-            confidences=canonical.confidences
-        )
-    
-    def get_visualization_results(self, frame, conf_threshold: float = 0.5):
-        """Get results for visualization."""
-        return self._pose_backend.predict(frame)
 
 
 def create_analyzer(detector: BaseDetector):
@@ -204,21 +92,19 @@ def analyze_video_multi_backend(
     save_video: bool = True,
     backend: str = "yolo_coco",
     model_path: str = "yolov8n-pose.pt",
-    device: str = "auto",
-    openpose_path: Optional[str] = None
+    device: str = "auto"
 ) -> dict:
     """
-    Analyze gait with configurable pose estimation backend.
+    Analyze gait with configurable pose estimation backend (YOLO-based).
     
     Args:
         video_path: Path to input video file
         output_dir: Base directory for results
         show_visualization: Whether to display visualization window
         save_video: Whether to save annotated video
-        backend: Pose estimation backend ('yolo_coco', 'yolo_lower', 'openpose')
+        backend: Pose estimation backend ('yolo_coco', 'yolo_lower', 'yolov8')
         model_path: Path to model weights
         device: Inference device
-        openpose_path: Path to OpenPose installation
         
     Returns:
         Analysis results as dictionary
@@ -234,7 +120,7 @@ def analyze_video_multi_backend(
     
     # Create detector and analyzer
     print(f"Loading {backend} detector with model: {model_path}")
-    detector = create_detector(backend, model_path, device, openpose_path)
+    detector = create_detector(backend, model_path, device)
     analyzer = create_analyzer(detector)
     visualizer = AdvancedGaitVisualizer(show_angles=True)
     
@@ -315,27 +201,18 @@ def analyze_video_multi_backend(
             
             # Get visualization
             viz_results = detector.get_visualization_results(frame)
-            
-            # For OpenPose, get rendered frame directly
-            if backend == "openpose" and viz_results is not None:
-                annotated_frame = viz_results.cvOutputData if hasattr(viz_results, 'cvOutputData') else frame
-            else:
-                # Use our custom visualizer for YOLO
-                from .detector import FrameKeypoints
-                # Convert GaitKeypoints to FrameKeypoints for visualizer compatibility
-                frame_kpts = None
-                if keypoints is not None and keypoints.raw_keypoints is not None:
-                    frame_kpts = FrameKeypoints(
-                        frame_number=keypoints.frame_number,
-                        timestamp_ms=keypoints.timestamp_ms,
-                        keypoints={},  # Not used by visualizer
-                        raw_keypoints=keypoints.raw_keypoints
-                    )
-                
-                annotated_frame = visualizer.draw_frame(
-                    frame, frame_kpts, analysis_state, viz_results,
-                    frame_number, total_frames, backend=backend
+            frame_kpts = None
+            if keypoints is not None and keypoints.raw_keypoints is not None:
+                frame_kpts = FrameKeypoints(
+                    frame_number=keypoints.frame_number,
+                    timestamp_ms=keypoints.timestamp_ms,
+                    keypoints={},
+                    raw_keypoints=keypoints.raw_keypoints
                 )
+            annotated_frame = visualizer.draw_frame(
+                frame, frame_kpts, analysis_state, viz_results,
+                frame_number, total_frames, backend=backend
+            )
             
             # Write to output
             if save_video:
@@ -443,43 +320,21 @@ def main():
         description="Gait analysis with multiple pose estimation backends",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Backends:
+Backends (YOLO-based only):
   yolov8      Standard YOLOv8-pose with COCO keypoints (17 points, ankle only)
   yolo_coco   Alias for yolov8
   yolo_lower  Fine-tuned YOLOv8 for lower body (10 points with heel/toe)
-  openpose    CMU OpenPose Body_25 (25 points with detailed foot keypoints)
-  pocketpose  PocketPose ONNX whole-body (133 points with feet)
-  sdpose      SDPose from HuggingFace (133 whole-body keypoints)
-  alphapose   AlphaPose with HALPE-136 whole-body keypoints
 
 Examples:
   # Standard YOLO (default)
   gait-analyze-multi video.mp4
   
   # YOLO Lower Body with custom model
-  gait-analyze-multi video.mp4 --backend yolo_lower --model best.pt
-  
-  # OpenPose (requires OPENPOSE_PATH env var or --openpose-path)
-  gait-analyze-multi video.mp4 --backend openpose --openpose-path C:/openpose
-  
-  # PocketPose (lightweight ONNX model)
-  gait-analyze-multi video.mp4 --backend pocketpose
-  
-  # AlphaPose whole-body
-  gait-analyze-multi video.mp4 --backend alphapose
+  gait-analyze-multi video.mp4 --backend yolo_lower --model models/yolo_lower/best.pt
 
-Backends with foot keypoints (heel/toe) provide more accurate gait analysis:
-  yolo_lower, openpose, pocketpose, sdpose, alphapose
+Install: pip install gait-analysis[yolo]
 
-Install backend dependencies with:
-  pip install gait-analysis[yolo]      # YOLOv8 (default)
-  pip install gait-analysis[pocketpose] # PocketPose  
-  pip install gait-analysis[sdpose]    # SDPose
-  pip install gait-analysis[alphapose] # AlphaPose
-  pip install gait-analysis[all]       # All backends
-
-List available backends:
-  gait-backends
+List available backends: gait-backends
         """
     )
     
@@ -505,7 +360,7 @@ List available backends:
     
     parser.add_argument(
         "--backend",
-        choices=["yolov8", "yolo_coco", "yolo_lower", "openpose", "pocketpose", "sdpose", "alphapose"],
+        choices=["yolov8", "yolo_coco", "yolo_lower"],
         default="yolov8",
         help="Pose estimation backend (default: yolov8)"
     )
@@ -522,20 +377,7 @@ List available backends:
         help="Inference device: auto, cpu, cuda (default: auto)"
     )
     
-    parser.add_argument(
-        "--openpose-path",
-        help="Path to OpenPose installation (required for openpose backend)"
-    )
-    
     args = parser.parse_args()
-    
-    # Validate OpenPose path
-    if args.backend == "openpose" and not args.openpose_path:
-        import os
-        if not os.environ.get("OPENPOSE_PATH"):
-            print("Error: OpenPose backend requires --openpose-path or OPENPOSE_PATH env variable",
-                  file=sys.stderr)
-            sys.exit(1)
     
     try:
         analyze_video_multi_backend(
@@ -545,8 +387,7 @@ List available backends:
             save_video=not args.no_video,
             backend=args.backend,
             model_path=args.model,
-            device=args.device,
-            openpose_path=args.openpose_path
+            device=args.device
         )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)

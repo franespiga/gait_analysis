@@ -7,46 +7,26 @@ readme = "README.md"
 packages = [{include = "gait_analysis", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 numpy = "^1.24.0"
 opencv-python = "^4.8.0"
+pandas = "^2.0.0"
+scipy = "^1.11.0"
+pyyaml = "^6.0"
+typer = {version = "^0.9.0", optional = true}
 
 # Core YOLO support (default backend)
 ultralytics = {version = "^8.0.0", optional = true}
-
-# OpenPose support (requires manual installation)
-# pyopenpose is not on PyPI - install from source
-
-# PocketPose support (ONNX-based)
-onnxruntime = {version = "^1.15.0", optional = true}
-onnxruntime-gpu = {version = "^1.15.0", optional = true}
-
-# SDPose support (HuggingFace)
-transformers = {version = "^4.30.0", optional = true}
-torch = {version = "^2.0.0", optional = true}
-torchvision = {version = "^0.15.0", optional = true}
-
-# AlphaPose support (uses torch/torchvision from sdpose)
+# Streamlit for app/
+streamlit = {version = "^1.28.0", optional = true}
 
 [tool.poetry.extras]
-# Default YOLO backend
+# YOLO backends (yolov8, yolo_lower)
 yolo = ["ultralytics"]
-
-# OpenPose - requires manual build, no pip deps
-openpose = []
-
-# PocketPose - lightweight ONNX models
-pocketpose = ["onnxruntime"]
-pocketpose-gpu = ["onnxruntime-gpu"]
-
-# SDPose - HuggingFace whole-body models  
-sdpose = ["transformers", "torch", "torchvision"]
-
-# AlphaPose - HALPE whole-body models
-alphapose = ["torch", "torchvision"]
-
-# All backends (except OpenPose which requires manual install)
-all = ["ultralytics", "onnxruntime", "transformers", "torch", "torchvision"]
+# Streamlit gait analysis app
+app = ["streamlit"]
+# CLI with Typer (scripts)
+cli = ["typer"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

@@ -136,7 +136,7 @@ class YOLOv8LowerBodyBackend(YOLOv8PoseBackend):
     
     def __init__(
         self,
-        model_path: str = "best.pt",
+        model_path: str = "models/yolo_lower/best.pt",
         device: str = "auto",
         conf_threshold: float = 0.25,  # Lower default for this model
         use_person_detector: bool = True,  # Enable two-stage pipeline
@@ -146,7 +146,7 @@ class YOLOv8LowerBodyBackend(YOLOv8PoseBackend):
         Initialize lower body YOLO backend.
         
         Args:
-            model_path: Path to fine-tuned model weights (e.g., "best.pt")
+            model_path: Path to fine-tuned model weights (default: models/yolo_lower/best.pt)
             device: Inference device
             conf_threshold: Confidence threshold (default lower for this model)
             use_person_detector: If True, detect persons first then crop

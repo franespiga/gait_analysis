@@ -115,24 +115,61 @@ def extract_keypoints_from_video(
             out[:, 2] = confs if confs is not None else 0.5
             keypoints_list.append(out)
         else:
-            keypoints_list.append(np.zeros((6, 3), dtype=np.float64))
+            keypoints_list.append(None)
         frame_idx += 1
     cap.release()
     if not keypoints_list:
         return np.zeros((0, 6, 3)), np.zeros(0), fps
+    # Infer K from first successful frame; fill missing with zeros
+    K = 6
+    for item in keypoints_list:
+        if item is not None:
+            K = item.shape[0]
+            break
+    for i in range(len(keypoints_list)):
+        if keypoints_list[i] is None:
+            keypoints_list[i] = np.zeros((K, 3), dtype=np.float64)
     stacked = np.array(keypoints_list)
     T, K, _ = stacked.shape
-    # Map to 6 keypoints if 10 (yolo_lower)
+    # Map to 6 keypoints only for yolo_lower (10 keypoints); keep 26 for HALPE-26
     if K == 10:
         six_kpt = np.zeros((T, 6, 3))
         for t in range(T):
             for i, src in enumerate(YOLO_LOWER_TO_6):
                 six_kpt[t, i, :] = stacked[t, src, :]
         stacked = six_kpt
-    elif K != 6:
+    elif K != 6 and K != 26:
         stacked = stacked[:, :6, :].copy()
     times_ms = (np.arange(T, dtype=float) / fps) * 1000.0
     return stacked, times_ms, fps
+
+
+# Default 6-keypoint foot skeleton (L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_*)
+FOOT_SKELETON = [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)]
+
+# HALPE-26 body skeleton (indices: 0 Nose..25 RHeel). Pairs for visualization.
+# Order: head/neck, arms, torso, legs, feet (see Halpe-FullBody / AlphaPose).
+HALPE26_SKELETON = [
+    (0, 17), (0, 18), (17, 18),
+    (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),
+    (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
+    (18, 19), (11, 19), (12, 19),
+    (15, 24), (15, 20), (24, 20), (20, 22), (24, 22),
+    (16, 25), (16, 21), (25, 21), (21, 23), (25, 23),
+]
+
+# HALPE-26 -> 6 foot keypoints for gait pipeline: L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_*
+HALPE26_TO_6 = [24, 20, 22, 25, 21, 23]
+
+
+def load_skeleton(schema_path: Path | None) -> list[tuple[int, int]]:
+    """Load skeleton edges from keypoint_schema.yaml if present."""
+    if schema_path and schema_path.exists():
+        with open(schema_path) as f:
+            data = yaml.safe_load(f)
+        if data and "skeleton" in data:
+            return [tuple(edge) for edge in data["skeleton"]]
+    return FOOT_SKELETON
 
 
 def draw_annotated_frame(
@@ -140,19 +177,36 @@ def draw_annotated_frame(
     keypoints: np.ndarray,
     events_this_frame: list,
     step_records: list,
+    skeleton: list[tuple[int, int]] | None = None,
+    min_conf: float = 0.1,
+    circle_radius: int = 10,
 ) -> np.ndarray:
-    """Draw keypoints and optional event markers on frame. Simple overlay."""
+    """Draw keypoints and skeleton on frame. Keypoints with conf >= min_conf are shown."""
     out = frame.copy()
     if keypoints.size == 0:
         return out
     K = keypoints.shape[0]
+    edges = skeleton if skeleton is not None else FOOT_SKELETON
+    # Draw skeleton lines first (so they appear under keypoints)
+    for (i, j) in edges:
+        if i >= K or j >= K:
+            continue
+        c1 = keypoints[i, 2] if keypoints.shape[-1] > 2 else 1.0
+        c2 = keypoints[j, 2] if keypoints.shape[-1] > 2 else 1.0
+        if c1 < min_conf and c2 < min_conf:
+            continue
+        x1, y1 = int(keypoints[i, 0]), int(keypoints[i, 1])
+        x2, y2 = int(keypoints[j, 0]), int(keypoints[j, 1])
+        cv2.line(out, (x1, y1), (x2, y2), (0, 200, 255), 2)
+    # Draw keypoint circles
     for k in range(K):
         x, y = keypoints[k, 0], keypoints[k, 1]
         c = keypoints[k, 2] if keypoints.shape[-1] > 2 else 1.0
-        if c < 0.2:
+        if c < min_conf:
             continue
         ix, iy = int(x), int(y)
-        cv2.circle(out, (ix, iy), 5, (0, 255, 0), -1)
+        cv2.circle(out, (ix, iy), circle_radius, (0, 255, 0), -1)
+        cv2.circle(out, (ix, iy), circle_radius, (255, 255, 255), 1)
     return out
 
 
@@ -168,6 +222,7 @@ def main() -> None:
     ap.add_argument("--no-steps-csv", action="store_true", help="Skip per-step CSV")
     ap.add_argument("--no-summary-json", action="store_true", help="Skip summary JSON")
     ap.add_argument("--annotated-video", type=Path, default=None, help="Save annotated video to this path")
+    ap.add_argument("--conf", type=float, default=None, help="Detection/keypoint confidence threshold (overrides config)")
     ap.add_argument("--device", type=str, default="")
     args = ap.parse_args()
 
@@ -190,8 +245,9 @@ def main() -> None:
     stem = args.video.stem
 
     pipeline_cfg = build_pipeline_config(cfg)
-    conf_threshold = float(cfg.get("conf_threshold", 0.5))
+    conf_threshold = args.conf if args.conf is not None else float(cfg.get("conf_threshold", 0.25))
     device = args.device or cfg.get("device", "auto")
+    schema_path = _project_root / "config" / "keypoint_schema.yaml"
 
     print(f"Loading model: {model_path}")
     keypoints_ts, times_ms, fps = extract_keypoints_from_video(
@@ -207,8 +263,16 @@ def main() -> None:
         print("No frames processed. Exiting.")
         return
 
+    num_kpts = keypoints_ts.shape[1]
+    if num_kpts == 26:
+        keypoints_for_pipeline = keypoints_ts[:, HALPE26_TO_6, :].copy()
+        skeleton = HALPE26_SKELETON
+    else:
+        keypoints_for_pipeline = keypoints_ts
+        skeleton = load_skeleton(schema_path)
+
     events, step_records, summary = run_pipeline(
-        keypoints_ts,
+        keypoints_for_pipeline,
         times_ms,
         fps,
         config=pipeline_cfg,
@@ -247,9 +311,11 @@ def main() -> None:
             ret, frame = cap.read()
             if not ret:
                 break
-            kpt = keypoints_ts[t]
+            kpt = keypoints_ts[t]  # full 26 or 6 keypoints for drawing
             ev_list = events_by_frame.get(t, [])
-            frame = draw_annotated_frame(frame, kpt, ev_list, step_records)
+            frame = draw_annotated_frame(
+                frame, kpt, ev_list, step_records, skeleton=skeleton
+            )
             writer.write(frame)
         cap.release()
         writer.release()

@@ -5,7 +5,7 @@
 model_path: models/foot_pose/best.pt  # or yolov8m-pose.pt for COCO + custom head
 backend: yolo_foot  # or yolo_coco / yolo_lower for legacy
 device: auto
-conf_threshold: 0.5
+conf_threshold: 0.25
 iou_threshold: 0.7
 
 # Person selection

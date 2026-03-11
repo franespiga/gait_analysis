@@ -50,30 +50,11 @@ Configs: `config/training.yaml`, `config/inference.yaml`, `config/keypoint_schem
 - **`--resume`**: Loads `{project}/{name}/weights/last.pt` and calls `model.train(resume=True)`. Use after an interrupted or previous run.
 - **`--batch`**: Integer (e.g. `16`), `-1` (auto batch size, e.g. 60% GPU memory), or float (e.g. `0.7` for utilization fraction). Config keys `batch` and `device` are supported in `config/training.yaml`.
 
-## Installation
+## Documentation
 
-### Prerequisites
-
-- Python 3.10+
-- [Poetry](https://python-poetry.org/docs/#installation) package manager
-
-### Setup
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd gait_analysis
-   ```
-
-2. Install dependencies with Poetry:
-   ```bash
-   poetry install
-   ```
-
-3. Activate the virtual environment:
-   ```bash
-   poetry shell
-   ```
+- **Installation & environment**: `docs/installation.md`
+- **Train on CMU 6‑keypoint foot dataset**: `docs/train_cmu.md`
+- **Train on HALPE‑26 full‑body dataset**: `docs/train_halpe.md`
 
 ## Usage
 
@@ -438,7 +419,11 @@ The `yolo_lower` backend uses `models/yolo_lower/best.pt` by default:
 gait-analyze-multi video.mp4 --backend yolo_lower
 ```
 
-### Foot keypoint dataset (CMU) – alternative downloads
+### Datasets
+
+The project uses pose/keypoint datasets for training and evaluation. Supported sources are described below.
+
+#### Foot keypoint dataset (CMU) – alternative downloads
 
 The [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/) (6 keypoints: heel, big toe, small toe per foot) is used for training foot keypoint models. The official CMU download URLs are often unavailable. Use the following alternatives.
 
@@ -469,6 +454,20 @@ Annotations refer to COCO 2017 images. Download from one of:
 - **Academic Torrents:** [COCO 2017](https://academictorrents.com/details/74dec1dd21ae4994dfd9069f9cb0443eb960c962)
 
 Place images so your dataset has `images/train/` and `images/val/` (e.g. `train2017/` and `val2017/` contents). Then run `scripts/prepare_dataset.py` with `--coco-annot` pointing to the train JSON and `--images-dir` to the folder containing the image subfolders. Note: CMU keypoint order (L big toe, L small toe, L heel, R big toe, R small toe, R heel) may require a reorder step to match `config/keypoint_schema.yaml` (L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_*); see the dataset docs or add a CMU-specific conversion if needed.
+
+#### Halpe 26 (full-body 26 keypoints)
+
+The [Halpe Full-Body](https://github.com/Fang-Haoshu/Halpe-FullBody) dataset provides 136 keypoints per person (body, face, hands). For body-only pose (e.g. AlphaPose HALPE-26 convention), the project includes a script that downloads (or accepts manually placed) HALPE annotations and produces a **26-keypoint** subset: Nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles, head, neck, hip, and foot keypoints (L/R big toe, small toe, heel).
+
+**Download and prepare HALPE-26:**
+
+```bash
+python scripts/download_halpe26.py --output-dir ./datasets/halpe26 --cleanup
+```
+
+The script creates `images/train`, `images/val`, `annotations/original`, `annotations/halpe26`, and `metadata/`. Original annotations are kept; filtered JSONs in `annotations/halpe26/` contain only the first 26 body keypoints per person (78 values in COCO [x, y, v] format), suitable for conversion to Ultralytics YOLO pose format. Annotation URLs are configurable at the top of the script; train/val annotations are often distributed via Baidu/Google links on the [Halpe-FullBody](https://github.com/Fang-Haoshu/Halpe-FullBody) repo—place them in `annotations/original/` if not using direct URLs.
+
+See **README_halpe26_download.md** for detailed usage, output structure, and keypoint list.
 
 ### Streamlit app
 

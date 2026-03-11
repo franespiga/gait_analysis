@@ -31,7 +31,7 @@ N_KEYPOINTS = 6
 
 
 def load_schema_yaml(schema_path: Optional[Path]) -> list[str]:
-    """Load keypoint names from config/keypoint_schema.yaml if present."""
+    """Load keypoint names from keypoint schema YAML (e.g. config/keypoint_schema_cmu.yaml) if present."""
     if schema_path and schema_path.exists():
         with open(schema_path) as f:
             data = yaml.safe_load(f)
@@ -182,7 +182,7 @@ def main() -> None:
     ap.add_argument("--dataset-dir", type=Path, default=Path("data/foot_pose"), help="Root directory for dataset")
     ap.add_argument("--coco-annot", type=Path, default=None, help="Path to COCO-format annotations JSON")
     ap.add_argument("--images-dir", type=Path, default=None, help="Path to images (if different from dataset_dir/images)")
-    ap.add_argument("--schema", type=Path, default=Path("config/keypoint_schema.yaml"), help="Keypoint schema YAML")
+    ap.add_argument("--schema", type=Path, default=Path("config/keypoint_schema_cmu.yaml"), help="Keypoint schema YAML (CMU: keypoint_schema_cmu.yaml)")
     ap.add_argument("--output-dir", type=Path, default=None, help="Output for labels (default: dataset_dir/labels/train, val)")
     ap.add_argument("--train-split", type=float, default=0.9, help="Train fraction when splitting")
     ap.add_argument("--min-visibility", type=float, default=0.0, help="Min keypoint visibility to include")

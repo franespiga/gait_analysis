@@ -31,12 +31,13 @@ from gait_analysis.advanced_visualizer import AdvancedGaitVisualizer
 from gait_analysis.multi_backend_main import create_detector, create_analyzer
 
 
-# Model options: (label, backend, model_path, conf_thresh). Paths under models/ are optional.
+# Built-in model options: (label, backend, model_path, conf_thresh).
+# Additional custom models are discovered dynamically from models/*/weights/best.pt.
 MODEL_OPTIONS = [
     ("YOLO COCO (nano, fast)", "yolo_coco", "yolov8n-pose.pt", 0.5),
     ("YOLO COCO (small)", "yolo_coco", "yolov8s-pose.pt", 0.5),
     ("YOLO COCO (medium)", "yolo_coco", "yolov8m-pose.pt", 0.5),
-    ("YOLO Lower Body (heel/toe)", "yolo_lower", "models/yolo_lower/best.pt", 0.25),
+    ("YOLO Lower Body (heel/toe)", "yolo_lower", str(_project_root / "models" / "yolo_lower" / "best.pt"), 0.25),
 ]
 DEFAULT_MODEL_INDEX = 0
 
@@ -124,24 +125,79 @@ def _draw_keypoints_fallback(frame: np.ndarray, raw_keypoints: np.ndarray, conf_
         cv2.circle(frame, (ix, iy), 2, (0, 255, 255), -1)
 
 
+def _discover_models_dir() -> list[tuple[str, str, str, float]]:
+    """
+    Discover custom models under models/ directory.
+
+    Each top-level folder under models/ becomes an option if it contains
+    weights/best.pt. The option label is "<folder> (models/<folder>)".
+    """
+    models_root = _project_root / "models"
+    if not models_root.exists():
+        return []
+    out: list[tuple[str, str, str, float]] = []
+    for sub in sorted(p for p in models_root.iterdir() if p.is_dir()):
+        weights = sub / "weights" / "best.pt"
+        if not weights.exists():
+            continue
+        name = sub.name
+        label = f"{name} (models/{name})"
+        backend = "yolo_lower" if "lower" in name.lower() else "yolo_coco"
+        conf = 0.25 if backend == "yolo_lower" else 0.3
+        out.append((label, backend, str(weights), conf))
+    return out
+
+
 def _get_available_models() -> list[tuple[str, str, str, float]]:
-    """Return list of (label, backend, model_path, conf_thresh) for models that are available."""
-    out = []
+    """
+    Return list of (label, backend, model_path, conf_thresh) for models that are available.
+
+    Includes built-in presets and all models discovered under models/*/weights/best.pt.
+    """
+    out: list[tuple[str, str, str, float]] = []
+
+    # Built-in options (filter out ones whose paths are missing, e.g. yolo_lower weights)
     for label, backend, model_path, conf in MODEL_OPTIONS:
-        if backend == "yolo_lower" or (model_path.startswith("models/") and "/" in model_path):
-            if not Path(model_path).exists():
+        # For file-backed models, require file to exist
+        if ("/" in str(model_path) or "\\" in str(model_path)) and Path(str(model_path)).suffix == ".pt":
+            if not Path(str(model_path)).exists():
                 continue
-        out.append((label, backend, model_path, conf))
+        out.append((label, backend, str(model_path), conf))
+
+    # Custom models under models/*/weights/best.pt
+    out.extend(_discover_models_dir())
+
+    # Fallback to COCO presets if nothing else is available
     if not out:
-        out = [(label, backend, model_path, conf) for label, backend, model_path, conf in MODEL_OPTIONS if backend == "yolo_coco"]
+        out = [
+            (label, backend, str(model_path), conf)
+            for label, backend, model_path, conf in MODEL_OPTIONS
+            if backend == "yolo_coco"
+        ]
     return out
 
 
 @st.cache_resource
 def _load_detector_and_analyzer(backend: str, model_path: str):
-    """Load detector and analyzer once and reuse."""
+    """Load detector and analyzer once and reuse.
+
+    Tries to load a YOLOv8 pose model first; if that fails for a built-in
+    model name (e.g. 'yolov8n-pose.pt'), it retries with the corresponding
+    YOLO11 pose name (e.g. 'yolo11n-pose.pt').
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    detector = create_detector(backend, model_path, device=device)
+    try:
+        detector = create_detector(backend, model_path, device=device)
+    except Exception as e:
+        alt_model_path = None
+        # Only attempt fallback for non-path model names (no slashes)
+        if "yolov8" in model_path and ("/" not in model_path and "\\" not in model_path):
+            alt_model_path = model_path.replace("yolov8", "yolo11")
+        elif "yolo11" in model_path and ("/" not in model_path and "\\" not in model_path):
+            alt_model_path = model_path.replace("yolo11", "yolov8")
+        if alt_model_path is None:
+            raise
+        detector = create_detector(backend, alt_model_path, device=device)
     analyzer = create_analyzer(detector)
     visualizer = AdvancedGaitVisualizer(show_angles=True, show_skeleton=True, show_stats=True)
     return detector, analyzer, visualizer
@@ -267,8 +323,8 @@ def main():
         elif len(cameras) == 1:
             sidebar.info("Using camera 0")
             camera_index = 0
-    else:
-        camera_index = sidebar.selectbox("Webcam", cameras, index=0)
+        else:
+            camera_index = sidebar.selectbox("Webcam", cameras, index=0)
 
     sidebar.header("Model")
     available = _get_available_models()
@@ -278,14 +334,42 @@ def main():
         "Pose model",
         model_labels,
         index=default_idx,
-        help="YOLO COCO: 17 keypoints (ankle only). YOLO Lower Body: 10 keypoints (heel/toe).",
+        help="Built-in YOLO COCO presets plus any models found under models/*/weights/best.pt.",
     )
     selected = next((m for m in available if m[0] == selected_label), available[0])
     _, backend, model_path, conf_thresh = selected
 
-    start_btn = st.sidebar.button("Start Gait Analysis")
+    # Initialize or retrieve model state in session
+    if "gait_model_state" not in st.session_state:
+        st.session_state["gait_model_state"] = {
+            "bundle": None,
+            "backend": None,
+            "model_path": None,
+            "conf_thresh": None,
+            "label": None,
+        }
+    model_state = st.session_state["gait_model_state"]
+
+    start_btn = sidebar.button("Start Gait Analysis")
+    sidebar.markdown("---")
+    load_btn = sidebar.button("Load model")
+
+    if load_btn:
+        try:
+            detector, analyzer, visualizer = _load_detector_and_analyzer(backend, model_path)
+        except Exception as e:
+            model_state["bundle"] = None
+            st.error(f"Failed to load model '{selected_label}': {e}")
+        else:
+            model_state["bundle"] = (detector, analyzer, visualizer)
+            model_state["backend"] = backend
+            model_state["model_path"] = model_path
+            model_state["conf_thresh"] = conf_thresh
+            model_state["label"] = selected_label
+            sidebar.success(f"Model loaded: {selected_label}")
+
     if not start_btn:
-        st.info("Select input and click **Start Gait Analysis**.")
+        st.info("Select input, choose a model, click **Load model**, then click **Start Gait Analysis**.")
         return
 
     if input_type == "Upload video" and not video_path:
@@ -295,11 +379,13 @@ def main():
         st.error("No webcam available.")
         return
 
-    try:
-        detector, analyzer, visualizer = _load_detector_and_analyzer(backend, model_path)
-    except Exception as e:
-        st.error(f"Failed to load model: {e}")
+    if not model_state.get("bundle"):
+        st.error("Please choose a model and click **Load model** in the sidebar before starting analysis.")
         return
+
+    detector, analyzer, visualizer = model_state["bundle"]
+    backend = model_state.get("backend", backend)
+    conf_thresh = model_state.get("conf_thresh", conf_thresh)
 
     place = st.empty()
     stop_placeholder = st.sidebar.empty()

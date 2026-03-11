@@ -1,9 +1,9 @@
-# COCO-WholeBody style foot keypoints for gait analysis
-# Used by training (Ultralytics format) and inference (event detection)
-# Minimum: heel + big toe per foot; full: heel + big toe + small toe per foot
+# CMU Human Foot Keypoint Dataset – 6 keypoints for gait analysis
+# Used by: prepare_dataset.py, convert_cmu_to_yolo_pose.py, infer_video.py (6-keypoint models)
+# See: docs/train_cmu.md
 
-name: coco_wholebody_foot
-description: "Foot keypoints for gait (heel, big toe, small toe per foot)"
+name: cmu_foot_6
+description: "CMU foot keypoints (heel, big toe, small toe per foot)"
 
 # Keypoint names in order (Ultralytics keypoint index = list index)
 keypoints:
@@ -32,7 +32,7 @@ indices:
   R_BIG_TOE: 4
   R_SMALL_TOE: 5
 
-# Minimum keypoints required (heel + big toe per foot)
+# Minimum keypoints required for gait (heel + big toe per foot)
 min_for_gait:
   left: [0, 1]   # L_HEEL, L_BIG_TOE
   right: [3, 4]  # R_HEEL, R_BIG_TOE

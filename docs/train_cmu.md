@@ -17,7 +17,7 @@ The [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.githu
 In this project we use a **6‑keypoint schema** focused on feet:
 
 - L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_HEEL, R_BIG_TOE, R_SMALL_TOE  
-  (see `config/keypoint_schema.yaml`)
+  (see `config/keypoint_schema_cmu.yaml`)
 
 ### 2. Download CMU foot annotations and COCO images
 
@@ -68,14 +68,14 @@ python scripts/prepare_dataset.py \
   --dataset-dir data/foot_pose \
   --coco-annot data/foot_cmu/annotations/person_keypoints_train2017_foot_v1.json \
   --images-dir data/foot_cmu/images/train2017 \
-  --schema config/keypoint_schema.yaml \
+  --schema config/keypoint_schema_cmu.yaml \
   --train-split 0.9
 ```
 
 This will:
 
 - Read the COCO‑style annotation JSON and the images from `--images-dir`.
-- Map CMU foot keypoints to the 6‑keypoint schema defined in `config/keypoint_schema.yaml`.
+- Map CMU foot keypoints to the 6‑keypoint schema defined in `config/keypoint_schema_cmu.yaml`.
 - Write YOLO‑style label files under:
 
 ```text
@@ -148,6 +148,6 @@ Behaviour:
 ### 6. Notes and recommendations
 
 - Make sure the image paths and annotation JSONs align (same filenames) before running `prepare_dataset.py`.
-- If you change the keypoint schema or add more keypoints, update `config/keypoint_schema.yaml` and re‑run the preparation step so the YOLO labels and the gait pipeline stay consistent.
+- If you change the keypoint schema or add more keypoints, update `config/keypoint_schema_cmu.yaml` and re‑run the preparation step so the YOLO labels and the gait pipeline stay consistent.
 - For faster iteration you can start with smaller image size (`--imgsz 320`) and a small model (`yolov8n-pose.pt`), then scale up once you’re satisfied with the pipeline.
 

@@ -163,7 +163,7 @@ HALPE26_TO_6 = [24, 20, 22, 25, 21, 23]
 
 
 def load_skeleton(schema_path: Path | None) -> list[tuple[int, int]]:
-    """Load skeleton edges from keypoint_schema.yaml if present."""
+    """Load skeleton edges from keypoint schema YAML (e.g. keypoint_schema_cmu.yaml or keypoint_schema_halpe.yaml) if present."""
     if schema_path and schema_path.exists():
         with open(schema_path) as f:
             data = yaml.safe_load(f)
@@ -247,7 +247,10 @@ def main() -> None:
     pipeline_cfg = build_pipeline_config(cfg)
     conf_threshold = args.conf if args.conf is not None else float(cfg.get("conf_threshold", 0.25))
     device = args.device or cfg.get("device", "auto")
-    schema_path = _project_root / "config" / "keypoint_schema.yaml"
+    # Use CMU 6-keypoint or HALPE 26-keypoint schema depending on model output
+    config_dir = _project_root / "config"
+    schema_cmu = config_dir / "keypoint_schema_cmu.yaml"
+    schema_halpe = config_dir / "keypoint_schema_halpe.yaml"
 
     print(f"Loading model: {model_path}")
     keypoints_ts, times_ms, fps = extract_keypoints_from_video(
@@ -266,10 +269,10 @@ def main() -> None:
     num_kpts = keypoints_ts.shape[1]
     if num_kpts == 26:
         keypoints_for_pipeline = keypoints_ts[:, HALPE26_TO_6, :].copy()
-        skeleton = HALPE26_SKELETON
+        skeleton = load_skeleton(schema_halpe) if schema_halpe.exists() else HALPE26_SKELETON
     else:
         keypoints_for_pipeline = keypoints_ts
-        skeleton = load_skeleton(schema_path)
+        skeleton = load_skeleton(schema_cmu)
 
     events, step_records, summary = run_pipeline(
         keypoints_for_pipeline,

@@ -4,9 +4,10 @@ A computer vision project for analyzing walking patterns using pose estimation. 
 
 ## Features
 
-- **YOLO-Based Pose Estimation**: Support for YOLO pose detection models:
-  - **YOLO COCO**: Standard YOLOv8-pose with 17 keypoints (ankle only)
-  - **YOLO Lower Body**: Fine-tuned model with 10 keypoints including heel and toe
+- **YOLO-Based Pose Estimation**: Support for YOLO pose models with:
+  - **HALPE 26 keypoints**: Full-body pose (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles, head, neck, hip, and L/R foot keypoints). See `docs/train_halpe.md`.
+  - **CMU 6 keypoints**: Foot-focused (L/R heel, big toe, small toe). See `docs/train_cmu.md`.
+  - **YOLO COCO**: Standard 17 keypoints (ankle only); **YOLO Lower Body**: 10 keypoints including heel and toe (optional).
 - **Accurate Step Classification**: With heel/toe keypoints, precisely detects:
   - **Heel Strike** (Correct): Heel touches ground first, then toe
   - **Toe Strike** (Incorrect): Toe touches ground first (toe walking)
@@ -25,30 +26,21 @@ A computer vision project for analyzing walking patterns using pose estimation. 
 
 The project supports a **production-quality pipeline** for overground mobile phone videos (side or behind, with shoes):
 
-- **Training**: Train a YOLO-family keypoint model (e.g. YOLOv8 pose) with **foot keypoints** (COCO-WholeBody style: L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_HEEL, R_BIG_TOE, R_SMALL_TOE). Scripts: dataset preparation, training with configurable hyperparameters, evaluation, optional ONNX export.
-- **Inference**: Person detection + pose → **temporal smoothing** (Savitzky-Golay) → **gait event detection** (Initial Contact IC, Toe-Off TO) → **contact classification** (heel-strike / toe-walk / flat) using foot pitch and contact timing.
+- **Training**: Train YOLO pose models with **HALPE 26** or **CMU 6** keypoints using `yolo pose train` (see `docs/train_halpe.md` and `docs/train_cmu.md`).
+- **Inference**: Person detection + pose → **temporal smoothing** (Savitzky-Golay) → **gait event detection** (IC/TO) → **contact classification** (heel-strike / toe-walk / flat).
 - **Outputs**: Per-event CSV, per-step CSV, summary JSON (cadence, step/stride time, stance, swing, step/stride length, speed, symmetry, variability). Optional annotated video.
 - **Gait metrics**: Cadence (steps/min), step time & stride time (mean, std), stance time, swing time, duty factor, step length & stride length (with calibration), walking speed (m/s), symmetry indices (L vs R), variability (CV%).
 
-**CLI commands** (from project root):
+**Example commands** (from project root):
 
 ```bash
-python scripts/prepare_dataset.py [--dataset-dir ...] [--coco-annot ...]
-python scripts/train_pose.py [--config config/training.yaml] [--data ...] [--resume] [--export-onnx]
-# Or Ultralytics-aligned training (device/resume/batch):
-python scripts/train_pose_ultralytics.py [--config config/training.yaml] [--data ...] [--resume] [--export-onnx] [--device 0] [--batch -1]
-python scripts/infer_video.py path/to/video.mp4 [--config config/inference.yaml] [--output-dir results]
+# Train (after preparing dataset per docs)
+yolo pose train data=data/foot_pose/data.yaml model=yolo11n-pose.pt epochs=100 imgsz=320
+# Gait inference on video
+python scripts/infer_video.py path/to/video.mp4 --config config/inference.yaml --model path/to/best.pt --output-dir results
 ```
 
-Configs: `config/training.yaml`, `config/inference.yaml`, `config/keypoint_schema.yaml`. Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
-
-#### Ultralytics-aligned training (`train_pose_ultralytics.py`)
-
-`train_pose_ultralytics.py` uses the same config and dataset as `train_pose.py` but follows [Ultralytics Train mode](https://docs.ultralytics.com/modes/train/) for device, resume, and batch:
-
-- **`--device`**: `0` (single GPU), `0,1` (multi-GPU), `-1` (idle GPU), `mps` (Apple Silicon), `cpu`, or `auto` (omit; default).
-- **`--resume`**: Loads `{project}/{name}/weights/last.pt` and calls `model.train(resume=True)`. Use after an interrupted or previous run.
-- **`--batch`**: Integer (e.g. `16`), `-1` (auto batch size, e.g. 60% GPU memory), or float (e.g. `0.7` for utilization fraction). Config keys `batch` and `device` are supported in `config/training.yaml`.
+Configs: `config/inference.yaml`, `config/keypoint_schema_cmu.yaml` (6-keypoint CMU), `config/keypoint_schema_halpe.yaml` (26-keypoint HALPE). Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
 
 ## Documentation
 
@@ -58,9 +50,24 @@ Configs: `config/training.yaml`, `config/inference.yaml`, `config/keypoint_schem
 
 ## Usage
 
+### Streamlit application
+
+A web UI for gait analysis (upload video or webcam) lives in **`app/`**. It runs pose estimation and shows keypoints with a live legend (frames, steps, steps/min, average step length).
+
+**Quick start** (from project root):
+
+```bash
+poetry install -E yolo -E app
+poetry run streamlit run app/gait_streamlit.py
+```
+
+Then in the sidebar: choose **Upload video** or **Webcam**, select a **Pose model**, click **Load model**, then **Start Gait Analysis**. Use **Stop** to end.
+
+**Full instructions** (model selection, custom models under `models/`, troubleshooting): see **[app/README.md](app/README.md)**.
+
 ### Command Line Interface
 
-There are two analysis scripts available:
+The following analysis entry points are available:
 
 #### Basic Analysis (`gait-analyze`)
 
@@ -421,69 +428,10 @@ gait-analyze-multi video.mp4 --backend yolo_lower
 
 ### Datasets
 
-The project uses pose/keypoint datasets for training and evaluation. Supported sources are described below.
+The project supports training with two keypoint setups:
 
-#### Foot keypoint dataset (CMU) – alternative downloads
-
-The [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/) (6 keypoints: heel, big toe, small toe per foot) is used for training foot keypoint models. The official CMU download URLs are often unavailable. Use the following alternatives.
-
-**1) Download annotations via script (recommended)**
-
-The project script fetches annotation JSONs from a GitHub mirror:
-
-```bash
-# Download train + val annotation JSONs to data/foot_cmu/annotations/
-python scripts/download_foot_dataset.py --output-dir data/foot_cmu/annotations
-
-# Or only print URLs for manual download
-python scripts/download_foot_dataset.py --print-urls
-```
-
-**2) Annotation sources**
-
-| Source | Format | Notes |
-|--------|--------|--------|
-| **GitHub mirror** | JSON | [Eva20150932/coco-foot-and-leg](https://github.com/Eva20150932/coco-foot-and-leg) – repo contains `person_keypoints_train2017_foot_v1.json` and `person_keypoints_val2017_foot_v1.json` (raw files or clone). |
-| **Official CMU** | ZIP | `http://posefs1.perception.cs.cmu.edu/OpenPose/datasets/foot/` – often down. |
-
-**3) COCO 2017 images (required)**
-
-Annotations refer to COCO 2017 images. Download from one of:
-
-- **Official:** [Train (18GB)](http://images.cocodataset.org/zips/train2017.zip), [Val (1GB)](http://images.cocodataset.org/zips/val2017.zip)
-- **Academic Torrents:** [COCO 2017](https://academictorrents.com/details/74dec1dd21ae4994dfd9069f9cb0443eb960c962)
-
-Place images so your dataset has `images/train/` and `images/val/` (e.g. `train2017/` and `val2017/` contents). Then run `scripts/prepare_dataset.py` with `--coco-annot` pointing to the train JSON and `--images-dir` to the folder containing the image subfolders. Note: CMU keypoint order (L big toe, L small toe, L heel, R big toe, R small toe, R heel) may require a reorder step to match `config/keypoint_schema.yaml` (L_HEEL, L_BIG_TOE, L_SMALL_TOE, R_*); see the dataset docs or add a CMU-specific conversion if needed.
-
-#### Halpe 26 (full-body 26 keypoints)
-
-The [Halpe Full-Body](https://github.com/Fang-Haoshu/Halpe-FullBody) dataset provides 136 keypoints per person (body, face, hands). For body-only pose (e.g. AlphaPose HALPE-26 convention), the project includes a script that downloads (or accepts manually placed) HALPE annotations and produces a **26-keypoint** subset: Nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles, head, neck, hip, and foot keypoints (L/R big toe, small toe, heel).
-
-**Download and prepare HALPE-26:**
-
-```bash
-python scripts/download_halpe26.py --output-dir ./datasets/halpe26 --cleanup
-```
-
-The script creates `images/train`, `images/val`, `annotations/original`, `annotations/halpe26`, and `metadata/`. Original annotations are kept; filtered JSONs in `annotations/halpe26/` contain only the first 26 body keypoints per person (78 values in COCO [x, y, v] format), suitable for conversion to Ultralytics YOLO pose format. Annotation URLs are configurable at the top of the script; train/val annotations are often distributed via Baidu/Google links on the [Halpe-FullBody](https://github.com/Fang-Haoshu/Halpe-FullBody) repo—place them in `annotations/original/` if not using direct URLs.
-
-See **README_halpe26_download.md** for detailed usage, output structure, and keypoint list.
-
-### Streamlit app
-
-A web UI for gait analysis (upload video or use webcam) is in `app/`. It shows keypoints from the waist down and a live legend with frame count, step count, steps per minute, and average step length (pixels).
-
-1. Install the app extra (includes Streamlit):
-   ```bash
-   poetry install -E yolo -E app
-   ```
-
-2. From the project root, run:
-   ```bash
-   poetry run streamlit run app/gait_streamlit.py
-   ```
-
-3. In the sidebar: choose **Upload video** (then use “Browse” to select a file) or **Webcam** (if multiple cameras exist, pick one). Click **Start Gait Analysis** to run. Use **Stop** to end webcam or video playback.
+- **CMU 6 keypoints**: Foot keypoints (L/R heel, big toe, small toe) from the [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/). Download annotations and COCO 2017 images, then prepare labels with `scripts/download_foot_dataset.py` and `scripts/prepare_dataset.py`. Full steps: **`docs/train_cmu.md`**.
+- **HALPE 26 keypoints**: Full-body keypoints from [Halpe Full-Body](https://github.com/Fang-Haoshu/Halpe-FullBody) (26 body/foot keypoints). Download and convert with `scripts/download_halpe26.py` and `scripts/convert_halpe26_to_yolo_pose.py`. Full steps: **`docs/train_halpe.md`**.
 
 ## Development
 

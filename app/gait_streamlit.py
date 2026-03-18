@@ -26,9 +26,13 @@ if str(_project_root) not in sys.path:
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
+import json
+
+from gait_analysis.analysis_output import get_analysis_run_dir
 from gait_analysis.base_detector import GaitKeypoints
 from gait_analysis.advanced_visualizer import AdvancedGaitVisualizer
 from gait_analysis.multi_backend_main import create_detector, create_analyzer
+from gait_analysis.analyzer import StepType
 
 
 # Built-in model options: (label, backend, model_path, conf_thresh).
@@ -40,6 +44,47 @@ MODEL_OPTIONS = [
     ("YOLO Lower Body (heel/toe)", "yolo_lower", str(_project_root / "models" / "yolo_lower" / "best.pt"), 0.25),
 ]
 DEFAULT_MODEL_INDEX = 0
+
+
+def _enrich_metrics(analysis_state, analyzer, elapsed_sec: float) -> dict:
+    """Build display metrics from analysis_state and analyzer (step-type counts and rates)."""
+    total_steps = 0
+    if analysis_state:
+        total_steps = analysis_state.get("left_steps", 0) + analysis_state.get("right_steps", 0)
+    steps_per_min = (total_steps / elapsed_sec * 60) if elapsed_sec > 0 else 0.0
+    avg_step_length_px = _running_step_length_px(analyzer)
+
+    heel_strikes = toe_strikes = flat_foot = 0
+    for tracker_name in ("left_tracker", "right_tracker"):
+        tracker = getattr(analyzer, tracker_name, None)
+        if tracker is None:
+            continue
+        for s in getattr(tracker, "steps", []):
+            stype = getattr(s, "step_type", None)
+            if stype is None:
+                continue
+            if stype == StepType.HEEL_STRIKE:
+                heel_strikes += 1
+            elif stype == StepType.TOE_STRIKE:
+                toe_strikes += 1
+            elif stype == StepType.FLAT_FOOT:
+                flat_foot += 1
+
+    heel_strike_rate = (100.0 * heel_strikes / total_steps) if total_steps else 0.0
+    toe_walking_rate = (100.0 * toe_strikes / total_steps) if total_steps else 0.0
+    flat_foot_rate = (100.0 * flat_foot / total_steps) if total_steps else 0.0
+
+    out = dict(analysis_state) if analysis_state else {}
+    out["total_steps"] = total_steps
+    out["steps_per_min"] = steps_per_min
+    out["avg_step_length_px"] = avg_step_length_px
+    out["heel_strikes"] = heel_strikes
+    out["toe_strikes"] = toe_strikes
+    out["flat_foot"] = flat_foot
+    out["heel_strike_rate"] = heel_strike_rate
+    out["toe_walking_rate"] = toe_walking_rate
+    out["flat_foot_rate"] = flat_foot_rate
+    return out
 
 
 def _running_step_length_px(analyzer) -> float | None:
@@ -240,7 +285,8 @@ def _run_video_analysis(video_path: str, detector, analyzer, visualizer, backend
                 total_steps = analysis_state.get("left_steps", 0) + analysis_state.get("right_steps", 0)
             avg_step_len = _running_step_length_px(analyzer)
             _draw_metrics_legend(annotated, frame_number, total_steps, elapsed, avg_step_len)
-            yield cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), frame_number, analysis_state, elapsed
+            metrics = _enrich_metrics(analysis_state, analyzer, elapsed)
+            yield cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), frame_number, metrics, elapsed
             frame_number += 1
     finally:
         cap.release()
@@ -281,10 +327,31 @@ def _run_webcam_analysis(camera_index: int, detector, analyzer, visualizer, back
                 total_steps = analysis_state.get("left_steps", 0) + analysis_state.get("right_steps", 0)
             avg_step_len = _running_step_length_px(analyzer)
             _draw_metrics_legend(annotated, frame_number, total_steps, elapsed, avg_step_len)
-            yield cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), frame_number, analysis_state, elapsed
+            metrics = _enrich_metrics(analysis_state, analyzer, elapsed)
+            yield cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), frame_number, metrics, elapsed
             frame_number += 1
     finally:
         cap.release()
+
+
+def _render_metrics_column(metrics: dict) -> None:
+    """Render big-number metrics in the right column from enriched metrics dict."""
+    total = metrics.get("total_steps", 0)
+    steps_per_min = metrics.get("steps_per_min", 0.0)
+    avg_px = metrics.get("avg_step_length_px")
+    heel_rate = metrics.get("heel_strike_rate", 0.0)
+    toe_rate = metrics.get("toe_walking_rate", 0.0)
+    flat_rate = metrics.get("flat_foot_rate", 0.0)
+
+    st.subheader("Overall metrics")
+    st.metric("Total steps", total)
+    st.metric("Steps / min", f"{steps_per_min:.1f}")
+    st.metric("Avg step length", f"{avg_px:.1f} px" if avg_px is not None else "—")
+
+    st.subheader("Contact rates")
+    st.metric("Heel strike rate", f"{heel_rate:.1f}%")
+    st.metric("Toe walking rate", f"{toe_rate:.1f}%")
+    st.metric("Flat foot rate", f"{flat_rate:.1f}%")
 
 
 def _list_webcam_indices(max_try: int = 5) -> list[int]:
@@ -387,18 +454,27 @@ def main():
     backend = model_state.get("backend", backend)
     conf_thresh = model_state.get("conf_thresh", conf_thresh)
 
-    place = st.empty()
+    run_dir = get_analysis_run_dir(_project_root, "APP")
+    source_name = Path(video_path).name if input_type == "Upload video" and video_path else "webcam"
+
+    col_video, col_metrics = st.columns([2, 1])
+    video_place = col_video.empty()
+    metrics_place = col_metrics.empty()
     stop_placeholder = st.sidebar.empty()
     stop_flag = [False]  # mutable so generator can see when to stop
+    last_metrics = None
 
     if input_type == "Upload video":
         gen = _run_video_analysis(video_path, detector, analyzer, visualizer, backend, conf_thresh)
         try:
             stop_btn = stop_placeholder.button("Stop", key="stop_btn")
-            for rgb_frame, frame_count, state, elapsed in gen:
+            for rgb_frame, frame_count, metrics, elapsed in gen:
                 if stop_btn:
                     break
-                place.image(rgb_frame, channels="RGB", use_container_width=True)
+                last_metrics = metrics
+                video_place.image(rgb_frame, channels="RGB", use_container_width=True)
+                with metrics_place.container():
+                    _render_metrics_column(metrics)
         finally:
             gen.close()
         if video_path and Path(video_path).exists():
@@ -410,21 +486,44 @@ def main():
         gen = _run_webcam_analysis(camera_index, detector, analyzer, visualizer, backend, conf_thresh, stop_flag)
         try:
             stop_btn = stop_placeholder.button("Stop", key="stop_btn")
-            for rgb_frame, frame_count, state, elapsed in gen:
+            for rgb_frame, frame_count, metrics, elapsed in gen:
                 if stop_flag[0]:
                     break
                 if stop_btn:
                     stop_flag[0] = True
                     gen.close()
                     break
-                place.image(rgb_frame, channels="RGB", use_container_width=True)
+                last_metrics = metrics
+                video_place.image(rgb_frame, channels="RGB", use_container_width=True)
+                with metrics_place.container():
+                    _render_metrics_column(metrics)
         finally:
             try:
                 gen.close()
             except Exception:
                 pass
 
-    place.empty()
+    if last_metrics is not None:
+        summary_path = run_dir / "summary.json"
+        # Keep only JSON-serializable metrics (avoid numpy from analysis_state)
+        save_dict = {
+            "source": source_name,
+            "run_dir": str(run_dir),
+            "total_steps": last_metrics.get("total_steps"),
+            "steps_per_min": last_metrics.get("steps_per_min"),
+            "avg_step_length_px": float(x) if (x := last_metrics.get("avg_step_length_px")) is not None else None,
+            "heel_strikes": last_metrics.get("heel_strikes"),
+            "toe_strikes": last_metrics.get("toe_strikes"),
+            "flat_foot": last_metrics.get("flat_foot"),
+            "heel_strike_rate": last_metrics.get("heel_strike_rate"),
+            "toe_walking_rate": last_metrics.get("toe_walking_rate"),
+            "flat_foot_rate": last_metrics.get("flat_foot_rate"),
+        }
+        with open(summary_path, "w") as f:
+            json.dump(save_dict, f, indent=2)
+        st.sidebar.info(f"Results saved to: {run_dir}")
+
+    video_place.empty()
     st.success("Analysis stopped.")
 
 

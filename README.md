@@ -37,16 +37,54 @@ The project supports a **production-quality pipeline** for overground mobile pho
 # Train (after preparing dataset per docs)
 yolo pose train data=data/foot_pose/data.yaml model=yolo11n-pose.pt epochs=100 imgsz=320
 # Gait inference on video
-python scripts/infer_video.py path/to/video.mp4 --config config/inference.yaml --model path/to/best.pt --output-dir results
+python scripts/infer_video.py path/to/video.mp4 --config config/inference.yaml --model path/to/best.pt
 ```
 
 Configs: `config/inference.yaml`, `config/keypoint_schema_cmu.yaml` (6-keypoint CMU), `config/keypoint_schema_halpe.yaml` (26-keypoint HALPE). Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
 
+**Analysis outputs** from the app, CLI scripts, or notebooks are stored under the top-level **`analyses/`** folder. The next level is the source: **`APP`** (Streamlit), **`CLI`** (scripts / `gait-analyze*`), or **`OTHER`** (e.g. notebooks). Each run writes into a timestamped subfolder **`YYYYMMDD_HHMM`**; all generated files for that run (JSON, CSV, annotated video, etc.) go only in that folder. Override with `--output-dir` (or script-specific options) to use a custom directory instead.
+
+## Project Structure
+
+```
+gait_analysis/
+├── pyproject.toml                  # Poetry configuration and dependencies
+├── README.md                       # This file
+├── src/
+│   └── gait_analysis/
+│       ├── __init__.py             # Package exports
+│       ├── keypoint_config.py      # Keypoint configurations for each model
+│       ├── base_detector.py        # Abstract detector interface
+│       ├── yolo_detector.py        # YOLO COCO and Lower Body detectors
+│       ├── detector.py             # Legacy YOLO COCO detector
+│       ├── analyzer.py             # Basic gait analysis logic
+│       ├── angle_analyzer.py       # Enhanced analysis with angles
+│       ├── heel_toe_analyzer.py    # Analyzer for heel/toe keypoints
+│       ├── visualizer.py           # Basic visualization utilities
+│       ├── advanced_visualizer.py  # Enhanced visualization with angles
+│       ├── main.py                 # Basic CLI entry point
+│       ├── advanced_main.py        # Advanced CLI entry point
+│       └── multi_backend_main.py   # Multi-backend CLI entry point
+├── tests/
+│   ├── __init__.py
+│   ├── test_analyzer.py            # Basic analyzer tests
+│   ├── test_angle_analyzer.py      # Enhanced analyzer tests
+│   └── test_multi_backend.py       # Multi-backend tests
+├── analyses/                       # All analysis outputs (APP/, CLI/, OTHER/, each with YYYYMMDD_HHMM/)
+├── deploy/                         # Docker and Streamlit Cloud deployment (see deploy/README.md)
+├── notebooks/
+│   └── exploration.ipynb           # Exploration notebook
+└── data/
+    └── .gitkeep                    # Sample videos directory
+```
+
+
 ## Documentation
 
-- **Installation & environment**: `docs/installation.md`
-- **Train on CMU 6‑keypoint foot dataset**: `docs/train_cmu.md`
-- **Train on HALPE‑26 full‑body dataset**: `docs/train_halpe.md`
+- **Installation & environment**: [docs/installation.md](docs/installation.md)
+- **Train on CMU 6‑keypoint foot dataset**: [docs/train_cmu.md](docs/train_cmu.md)
+- **Train on HALPE‑26 full‑body dataset**: [docs/train_halpe.md](docs/train_halpe.md)
+- **Deploy the Streamlit app** (Docker, Streamlit Community Cloud): [deploy/README.md](deploy/README.md)
 
 ## Usage
 
@@ -83,7 +121,7 @@ gait-analyze path/to/video.mp4 --show
 
 Specify output file:
 ```bash
-gait-analyze path/to/video.mp4 --output results/analysis.json --show
+gait-analyze path/to/video.mp4 --output path/to/analysis.json --show
 ```
 
 #### Advanced Analysis (`gait-analyze-advanced`)
@@ -159,7 +197,7 @@ gait-analyze-multi path/to/video.mp4 --backend yolo_lower --show --output-dir re
 | Option | Description | Default |
 |--------|-------------|---------|
 | `video` | Path to input video file | Required |
-| `-o, --output-dir` | Base directory for results | results |
+| `-o, --output-dir` | Run directory for results | analyses/CLI/YYYYMMDD_HHMM |
 | `--show` | Show visualization window during analysis | False |
 | `--no-video` | Don't save annotated output video | False |
 | `--model` | YOLO pose model to use | yolov8n-pose.pt |
@@ -170,7 +208,7 @@ gait-analyze-multi path/to/video.mp4 --backend yolo_lower --show --output-dir re
 | Option | Description | Default |
 |--------|-------------|---------|
 | `video` | Path to input video file | Required |
-| `-o, --output-dir` | Base directory for results | results |
+| `-o, --output-dir` | Run directory for results | analyses/CLI/YYYYMMDD_HHMM |
 | `--show` | Show visualization window during analysis | False |
 | `--no-video` | Don't save annotated output video | False |
 | `--backend` | Pose estimation backend (see below) | yolo_coco |
@@ -325,39 +363,9 @@ The JSON includes comprehensive metrics:
 - **Heel Strike Angle**: The angle of the foot's approach to the ground when the heel contacts first. Measured as the angle between the foot trajectory and the horizontal plane. Lower angles indicate a more proper heel-first gait.
 
 - **Toe Strike Angle**: For incorrect (toe walking) steps, measures the angle at the toe vertex (foot-toe-pavement). Higher angles indicate more pronounced toe walking.
-```
 
-## Project Structure
 
-```
-gait_analysis/
-├── pyproject.toml                  # Poetry configuration and dependencies
-├── README.md                       # This file
-├── src/
-│   └── gait_analysis/
-│       ├── __init__.py             # Package exports
-│       ├── keypoint_config.py      # Keypoint configurations for each model
-│       ├── base_detector.py        # Abstract detector interface
-│       ├── yolo_detector.py        # YOLO COCO and Lower Body detectors
-│       ├── detector.py             # Legacy YOLO COCO detector
-│       ├── analyzer.py             # Basic gait analysis logic
-│       ├── angle_analyzer.py       # Enhanced analysis with angles
-│       ├── heel_toe_analyzer.py    # Analyzer for heel/toe keypoints
-│       ├── visualizer.py           # Basic visualization utilities
-│       ├── advanced_visualizer.py  # Enhanced visualization with angles
-│       ├── main.py                 # Basic CLI entry point
-│       ├── advanced_main.py        # Advanced CLI entry point
-│       └── multi_backend_main.py   # Multi-backend CLI entry point
-├── tests/
-│   ├── __init__.py
-│   ├── test_analyzer.py            # Basic analyzer tests
-│   ├── test_angle_analyzer.py      # Enhanced analyzer tests
-│   └── test_multi_backend.py       # Multi-backend tests
-├── notebooks/
-│   └── exploration.ipynb           # Exploration notebook
-└── data/
-    └── .gitkeep                    # Sample videos directory
-```
+
 
 ## Algorithm Details
 
@@ -368,7 +376,14 @@ The system supports multiple pose estimation backends:
 #### YOLO COCO (17 keypoints)
 Standard YOLOv8-pose with COCO keypoints. Only provides ankle positions, requiring trajectory-based step classification.
 
-#### YOLO Lower Body (10 keypoints) ⭐ RECOMMENDED
+#### YOLO fine-tuned with HALPE dataset (26 keyponts) ⭐ RECOMMENDED
+
+**TODO**: upload weights to make it available
+
+
+
+
+#### YOLO Lower Body (10 keypoints) 
 Fine-tuned model from [yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints](https://github.com/yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints):
 - Left/Right Hip (0, 1)
 - Left/Right Knee (2, 3)
@@ -377,6 +392,9 @@ Fine-tuned model from [yankaizhao322/Fine-Tuned-YOLOv8-Pose-Lower-body-Keypoints
 - Left/Right Foot/Toe (8, 9)
 
 Having actual heel and toe positions enables precise step classification.
+
+
+
 
 ### Step Detection
 

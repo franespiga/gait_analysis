@@ -10,6 +10,7 @@ from pathlib import Path
 
 import cv2
 
+from .analysis_output import get_analysis_run_dir
 from .detector import KeypointDetector
 from .angle_analyzer import EnhancedGaitAnalyzer
 from .advanced_visualizer import (
@@ -61,8 +62,9 @@ def analyze_video_advanced(
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
     
-    # Create timestamped output directory
-    output_dir_path = get_timestamped_output_dir(output_dir, video_path.name)
+    # output_dir is the run directory (all outputs go here)
+    output_dir_path = Path(output_dir).resolve()
+    output_dir_path.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir_path}")
     
     # Initialize components
@@ -262,7 +264,7 @@ Output:
     parser.add_argument(
         "-o", "--output-dir",
         default="results",
-        help="Base directory for results (default: results)"
+        help="Run directory for results (default: analyses/CLI/YYYYMMDD_HHMM)"
     )
     
     parser.add_argument(
@@ -290,11 +292,17 @@ Output:
     )
     
     args = parser.parse_args()
-    
+    project_root = Path(__file__).resolve().parent.parent.parent
+    output_dir = (
+        str(get_analysis_run_dir(project_root, "CLI"))
+        if args.output_dir == "results"
+        else str(get_timestamped_output_dir(args.output_dir, Path(args.video).name))
+    )
+
     try:
         analyze_video_advanced(
             video_path=args.video,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             show_visualization=args.show,
             save_video=not args.no_video,
             model_name=args.model,

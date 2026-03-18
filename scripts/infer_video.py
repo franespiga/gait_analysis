@@ -28,6 +28,7 @@ if str(_project_root) not in sys.path:
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
+from gait_analysis.analysis_output import get_analysis_run_dir
 from gait_analysis.inference_pipeline import (
     PipelineConfig,
     run_pipeline,
@@ -240,7 +241,13 @@ def main() -> None:
         elif yolo_lower_path.exists():
             model_path = str(yolo_lower_path)
 
-    output_dir = args.output_dir or Path(cfg.get("output_dir", "results"))
+    _cfg_out = cfg.get("output_dir", "results")
+    if args.output_dir is not None:
+        output_dir = Path(args.output_dir)
+    elif _cfg_out is None or str(_cfg_out).strip() in ("", "results"):
+        output_dir = get_analysis_run_dir(_project_root, "CLI")
+    else:
+        output_dir = Path(_cfg_out)
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = args.video.stem
 

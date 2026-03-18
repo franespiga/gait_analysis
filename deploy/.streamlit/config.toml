@@ -1,0 +1,18 @@
+# Streamlit config for the Gait Analysis app
+# Copy to repository root as .streamlit/config.toml for local runs, or leave in deploy/ for reference.
+# In Docker we pass --server.port and --server.address via CMD instead.
+
+[server]
+port = 8501
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+# Optional: use "dark" or leave default
+# primaryColor = "#4CAF50"
+# backgroundColor = "#0E1117"

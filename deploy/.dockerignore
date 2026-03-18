@@ -1,0 +1,24 @@
+# Use from repo root: docker build -f deploy/Dockerfile .
+# This file is applied when context is . (repo root)
+.git
+.gitignore
+*.md
+!deploy/*.md
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+.venv
+venv
+env
+notebooks
+tests
+*.ipynb
+data/*
+!data/.gitkeep
+analyses/*
+!analyses/.gitkeep
+!analyses/APP/.gitkeep
+!analyses/CLI/.gitkeep
+!analyses/OTHER/.gitkeep

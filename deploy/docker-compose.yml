@@ -1,0 +1,20 @@
+# Run the Gait Analysis Streamlit app with Docker Compose
+# From repository root: docker compose -f deploy/docker-compose.yml up --build
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - GAIT_DEVICE=cpu
+      # Optional: override models dir if you mount a volume
+      # - GAIT_MODELS_DIR=/app/models
+    volumes:
+      # Persist analysis outputs on the host
+      - ./analyses:/app/analyses
+      # Mount custom models from host (optional)
+      - ./models:/app/models:ro
+    restart: unless-stopped

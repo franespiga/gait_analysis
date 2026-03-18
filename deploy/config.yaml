@@ -1,0 +1,55 @@
+# Deployment configuration for the Gait Analysis Streamlit app
+# Used as reference for Docker/Streamlit Cloud and to override defaults via environment.
+
+# ---------------------------------------------------------------------------
+# Model paths and discovery
+# ---------------------------------------------------------------------------
+models:
+  # Directory (relative to project root) where custom models live.
+  # Each subfolder can contain weights/best.pt and will appear in the app dropdown.
+  directory: models
+
+  # Default model when no custom models are found. Built-in presets are always available.
+  # Options: yolov8n-pose.pt, yolov8s-pose.pt, yolov8m-pose.pt, or path like models/yolo_lower/weights/best.pt
+  default: yolov8n-pose.pt
+
+  # Example custom model layout (for reference):
+  #   models/
+  #     yolo_lower/
+  #       weights/
+  #         best.pt
+  #     foot_pose/
+  #       weights/
+  #         best.pt
+
+# ---------------------------------------------------------------------------
+# Inference
+# ---------------------------------------------------------------------------
+inference:
+  confidence_threshold: 0.25
+  device: auto   # auto | cpu | cuda | cuda:0
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  # Root for all analysis outputs (app writes to analyses/APP/YYYYMMDD_HHMM by default)
+  analyses_root: analyses
+
+# ---------------------------------------------------------------------------
+# Streamlit server (Docker / local)
+# ---------------------------------------------------------------------------
+streamlit:
+  port: 8501
+  address: 0.0.0.0   # 0.0.0.0 for Docker, 0.0.0.0 for Streamlit Cloud
+  headless: true
+  # Optional: browser.gatherUsageStats = false
+
+# ---------------------------------------------------------------------------
+# Environment overrides (documentation)
+# Set these in Docker or Streamlit Cloud secrets to override:
+#   GAIT_MODELS_DIR     - Override models directory path (default: models)
+#   GAIT_DEFAULT_MODEL  - Override default model name/path
+#   GAIT_DEVICE         - Override device (cpu recommended for Cloud)
+#   GAIT_ANALYSES_ROOT  - Override analyses root (default: analyses)
+# ---------------------------------------------------------------------------

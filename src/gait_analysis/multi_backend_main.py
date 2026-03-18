@@ -18,6 +18,7 @@ from typing import Optional, Union
 
 import cv2
 
+from .analysis_output import get_analysis_run_dir
 from .keypoint_config import DetectorBackend
 from .base_detector import BaseDetector, GaitKeypoints
 from .detector import FrameKeypoints
@@ -114,8 +115,9 @@ def analyze_video_multi_backend(
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
     
-    # Create output directory
-    output_dir_path = get_timestamped_output_dir(output_dir, video_path.name)
+    # output_dir is the run directory (all outputs go here)
+    output_dir_path = Path(output_dir).resolve()
+    output_dir_path.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir_path}")
     
     # Create detector and analyzer
@@ -343,7 +345,7 @@ List available backends: gait-backends
     parser.add_argument(
         "-o", "--output-dir",
         default="results",
-        help="Base directory for results (default: results)"
+        help="Run directory for results (default: analyses/CLI/YYYYMMDD_HHMM)"
     )
     
     parser.add_argument(
@@ -378,11 +380,17 @@ List available backends: gait-backends
     )
     
     args = parser.parse_args()
-    
+    project_root = Path(__file__).resolve().parent.parent.parent
+    output_dir = (
+        str(get_analysis_run_dir(project_root, "CLI"))
+        if args.output_dir == "results"
+        else str(get_timestamped_output_dir(args.output_dir, Path(args.video).name))
+    )
+
     try:
         analyze_video_multi_backend(
             video_path=args.video,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             show_visualization=args.show,
             save_video=not args.no_video,
             backend=args.backend,

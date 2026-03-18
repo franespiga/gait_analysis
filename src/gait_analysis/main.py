@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 
+from .analysis_output import get_analysis_run_dir
 from .detector import KeypointDetector
 from .analyzer import GaitAnalyzer
 from .visualizer import (
@@ -123,21 +124,17 @@ def analyze_video(
     results = analyzer.get_results(str(video_path), frame_number, fps)
     results_dict = results.to_dict()
     
-    # Save to JSON if output path specified
+    # Save to JSON: default is analyses/CLI/YYYYMMDD_HHMM/<stem>.json
     if output_path:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(output_path, 'w') as f:
-            json.dump(results_dict, f, indent=2)
-        
-        print(f"Results saved to: {output_path}")
     else:
-        # Auto-generate output path
-        output_path = video_path.with_suffix('.json')
-        with open(output_path, 'w') as f:
-            json.dump(results_dict, f, indent=2)
-        print(f"Results saved to: {output_path}")
+        _project_root = Path(__file__).resolve().parent.parent.parent
+        run_dir = get_analysis_run_dir(_project_root, "CLI")
+        output_path = run_dir / f"{video_path.stem}.json"
+    with open(output_path, 'w') as f:
+        json.dump(results_dict, f, indent=2)
+    print(f"Results saved to: {output_path}")
     
     # Print summary
     print("\n" + "="*50)

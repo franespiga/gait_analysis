@@ -46,7 +46,7 @@ calibration:
   reference_height_m: 1.7   # known height in meters
   scale_factor_m_per_px: null  # direct: meters per pixel
 
-# Output
+# Output (default "results" → scripts write to analyses/CLI/YYYYMMDD_HHMM; override with --output-dir to set a custom run dir)
 output_dir: results
 save_per_event_csv: true
 save_per_step_csv: true

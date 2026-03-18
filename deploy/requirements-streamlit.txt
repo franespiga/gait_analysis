@@ -1,0 +1,13 @@
+# Dependencies for the Gait Analysis Streamlit app (Docker and Streamlit Community Cloud)
+# Install: pip install -r deploy/requirements-streamlit.txt
+# For Streamlit Cloud: copy this file to repository root as requirements.txt (or to app/requirements.txt)
+
+streamlit>=1.28.0
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+pyyaml>=6.0

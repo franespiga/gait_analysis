@@ -19,6 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import yaml
+import torch
 
 # Project root and src on path
 _project_root = Path(__file__).resolve().parent.parent
@@ -66,9 +67,12 @@ def build_pipeline_config(cfg: dict) -> PipelineConfig:
         pitch_threshold_deg=float(contact.get("pitch_threshold_deg", 8.0)),
         stabilization_delta_ms=float(contact.get("stabilization_delta_ms", 50.0)),
         flat_window_ms=float(contact.get("flat_window_ms", 80.0)),
+        flat_stable_velocity=float(contact.get("flat_stable_velocity", 1.5)),
+        overlap_min_interfoot_px=float(contact.get("overlap_min_interfoot_px", 40.0)),
         conf_threshold=float(cfg.get("conf_threshold", 0.3)),
         scale_m_per_px=scale,
         fps_aware_smoothing=bool(ev.get("fps_aware", True)),
+        min_consecutive_bout=int(cfg.get("bouts", {}).get("min_consecutive", 2)),
     )
 
 
@@ -76,20 +80,54 @@ def extract_keypoints_from_video(
     video_path: Path,
     model_path: str,
     conf_threshold: float = 0.5,
-    device: str = "auto",
+    device: str = "cuda:0" if torch.cuda.is_available() else "cpu",
+    stage_b_cfg=None,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Run YOLO pose on video; return (keypoints T,K,3), times_ms (T,), fps.
     Select main person per frame (highest keypoint confidence).
+
+    If *stage_b_cfg* is provided and enabled, frames where foot confidence
+    is low / feet overlap / jitter is high trigger a Stage B refinement
+    pass on a foot crop.
     """
     from ultralytics import YOLO
+    from gait_analysis.stage_b_refinement import (
+        StageBConfig, needs_stage_b, refine_foot_keypoints,
+    )
+
     model = YOLO(model_path)
+
+    sb_cfg: StageBConfig | None = None
+    sb_model = None
+    if stage_b_cfg is not None and stage_b_cfg.get("enabled", False):
+        sb_cfg = StageBConfig(
+            enabled=True,
+            model_path=stage_b_cfg.get("model_path", "models/halpe26_stage_b/best.pt"),
+            trigger_min_foot_conf=float(stage_b_cfg.get("trigger_min_foot_conf", 0.3)),
+            trigger_overlap_flag=bool(stage_b_cfg.get("trigger_overlap_flag", True)),
+            trigger_max_jitter_px=float(stage_b_cfg.get("trigger_max_jitter_px", 15.0)),
+            crop_margin=float(stage_b_cfg.get("crop_margin", 0.4)),
+            crop_min_px=int(stage_b_cfg.get("crop_min_px", 128)),
+            crop_max_px=int(stage_b_cfg.get("crop_max_px", 384)),
+        )
+        from pathlib import Path as _P
+        if _P(sb_cfg.model_path).exists():
+            sb_model = YOLO(sb_cfg.model_path)
+            print(f"Stage B model loaded: {sb_cfg.model_path}")
+        else:
+            print(f"Warning: Stage B model not found at {sb_cfg.model_path}; Stage B disabled.")
+            sb_cfg = None
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    keypoints_list = []
+    keypoints_list: list[np.ndarray | None] = []
+    stage_b_count = 0
+    prev_kpts: np.ndarray | None = None
     frame_idx = 0
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -103,25 +141,38 @@ def extract_keypoints_from_video(
             if xy is not None and len(xy) > 0:
                 xy = xy.cpu().numpy()
                 c = c.cpu().numpy() if c is not None else np.ones((xy.shape[0], xy.shape[1]))
-                # Main person: highest mean confidence
                 mean_conf = np.mean(c, axis=1)
                 idx = int(np.argmax(mean_conf))
-                kpts = xy[idx]  # (K, 2)
-                confs = c[idx]   # (K,)
+                kpts = xy[idx]
+                confs = c[idx]
         if kpts is not None:
-            # (K, 3) with x, y, conf
             K = kpts.shape[0]
             out = np.zeros((K, 3), dtype=np.float64)
             out[:, :2] = kpts
             out[:, 2] = confs if confs is not None else 0.5
+
+            # Stage B refinement
+            if sb_cfg is not None and sb_model is not None:
+                if needs_stage_b(out, prev_kpts, sb_cfg):
+                    out = refine_foot_keypoints(
+                        frame, out, sb_model, sb_cfg,
+                        conf_threshold=conf_threshold, device=device,
+                    )
+                    stage_b_count += 1
+
+            prev_kpts = out.copy()
             keypoints_list.append(out)
         else:
+            prev_kpts = None
             keypoints_list.append(None)
         frame_idx += 1
     cap.release()
+
+    if sb_cfg is not None:
+        print(f"Stage B refinements applied: {stage_b_count}/{frame_idx} frames")
+
     if not keypoints_list:
         return np.zeros((0, 6, 3)), np.zeros(0), fps
-    # Infer K from first successful frame; fill missing with zeros
     K = 6
     for item in keypoints_list:
         if item is not None:
@@ -132,7 +183,6 @@ def extract_keypoints_from_video(
             keypoints_list[i] = np.zeros((K, 3), dtype=np.float64)
     stacked = np.array(keypoints_list)
     T, K, _ = stacked.shape
-    # Map to 6 keypoints only for yolo_lower (10 keypoints); keep 26 for HALPE-26
     if K == 10:
         six_kpt = np.zeros((T, 6, 3))
         for t in range(T):
@@ -253,11 +303,13 @@ def main() -> None:
 
     pipeline_cfg = build_pipeline_config(cfg)
     conf_threshold = args.conf if args.conf is not None else float(cfg.get("conf_threshold", 0.25))
-    device = args.device or cfg.get("device", "auto")
+    device = args.device or cfg.get("device", "cuda:0" if torch.cuda.is_available() else "cpu")
     # Use CMU 6-keypoint or HALPE 26-keypoint schema depending on model output
     config_dir = _project_root / "config"
     schema_cmu = config_dir / "keypoint_schema_cmu.yaml"
     schema_halpe = config_dir / "keypoint_schema_halpe.yaml"
+
+    stage_b_cfg = cfg.get("stage_b", None)
 
     print(f"Loading model: {model_path}")
     keypoints_ts, times_ms, fps = extract_keypoints_from_video(
@@ -265,6 +317,7 @@ def main() -> None:
         model_path,
         conf_threshold=conf_threshold,
         device=device,
+        stage_b_cfg=stage_b_cfg,
     )
     T = keypoints_ts.shape[0]
     print(f"Frames: {T}, FPS: {fps:.2f}")

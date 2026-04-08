@@ -26,21 +26,32 @@ A computer vision project for analyzing walking patterns using pose estimation. 
 
 The project supports a **production-quality pipeline** for overground mobile phone videos (side or behind, with shoes):
 
-- **Training**: Train YOLO pose models with **HALPE 26** or **CMU 6** keypoints using `yolo pose train` (see `docs/train_halpe.md` and `docs/train_cmu.md`).
-- **Inference**: Person detection + pose → **temporal smoothing** (Savitzky-Golay) → **gait event detection** (IC/TO) → **contact classification** (heel-strike / toe-walk / flat).
-- **Outputs**: Per-event CSV, per-step CSV, summary JSON (cadence, step/stride time, stance, swing, step/stride length, speed, symmetry, variability). Optional annotated video.
-- **Gait metrics**: Cadence (steps/min), step time & stride time (mean, std), stance time, swing time, duty factor, step length & stride length (with calibration), walking speed (m/s), symmetry indices (L vs R), variability (CV%).
+- **Training (two-stage):**
+  - **Stage A** — Full-body HALPE-26 model (`yolo11s-pose`, multi-scale, per-keypoint loss weighting for ankles/heels/toes). See [`docs/train_halpe_stage_a.md`](docs/train_halpe_stage_a.md).
+  - **Stage B** — Foot-ROI safeguard model trained on lower-leg crops derived from the same HALPE labels. Activated only when Stage A flags low foot confidence or inter-foot overlap. See [`docs/train_halpe_stage_b.md`](docs/train_halpe_stage_b.md).
+  - Basic single-stage training is also supported: [`docs/train_halpe.md`](docs/train_halpe.md), [`docs/train_cmu.md`](docs/train_cmu.md).
+- **Inference**: Person detection + pose → optional **Stage B foot refinement** → **temporal smoothing** (Savitzky-Golay) → **gait event detection** (IC/TO) → **contact classification** (heel-strike / toe-walk / flat) → **quality-aware filtering** (occlusion/overlap).
+- **Outputs**: Per-event CSV, per-step CSV, summary JSON (cadence, step/stride time, stance, swing, step/stride length, speed, symmetry, variability). Optional annotated video. Quality report (all steps vs primary-only).
+- **Gait metrics**: Cadence (steps/min), step time & stride time (mean, std), stance time, swing time, duty factor, step length & stride length (with calibration), walking speed (m/s), symmetry indices (L vs R), variability (CV%). Toe-walking bout detection, severity index, heel-strike rate, foot-strike entropy.
 
 **Example commands** (from project root):
 
 ```bash
-# Train (after preparing dataset per docs)
-yolo pose train data=data/foot_pose/data.yaml model=yolo11n-pose.pt epochs=100 imgsz=320
-# Gait inference on video
+# Stage A training (per-keypoint weighted)
+python scripts/train_halpe_stage_a.py --device 0
+
+# Stage B: build foot crops + train
+python scripts/build_foot_crops.py --stage-a-dir data/halpe26_yolo_pose --output-dir data/halpe26_foot_crops
+python scripts/train_halpe_stage_b.py --device 0
+
+# Gait inference on video (Stage A only, default)
 python scripts/infer_video.py path/to/video.mp4 --config config/inference.yaml --model path/to/best.pt
+
+# Gait inference with Stage B enabled (set stage_b.enabled: true in config)
+python scripts/infer_video.py path/to/video.mp4 --config config/inference.yaml
 ```
 
-Configs: `config/inference.yaml`, `config/keypoint_schema_cmu.yaml` (6-keypoint CMU), `config/keypoint_schema_halpe.yaml` (26-keypoint HALPE). Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
+Configs: `config/inference.yaml`, `config/train_halpe_stage_a.yaml`, `config/train_halpe_stage_b.yaml`, `config/keypoint_schema_halpe.yaml`. Tech stack: Python 3.10+, Ultralytics, OpenCV, NumPy/SciPy, Pandas, YAML.
 
 **Analysis outputs** from the app, CLI scripts, or notebooks are stored under the top-level **`analyses/`** folder. The next level is the source: **`APP`** (Streamlit), **`CLI`** (scripts / `gait-analyze*`), or **`OTHER`** (e.g. notebooks). Each run writes into a timestamped subfolder **`YYYYMMDD_HHMM`**; all generated files for that run (JSON, CSV, annotated video, etc.) go only in that folder. Override with `--output-dir` (or script-specific options) to use a custom directory instead.
 
@@ -50,28 +61,52 @@ Configs: `config/inference.yaml`, `config/keypoint_schema_cmu.yaml` (6-keypoint 
 gait_analysis/
 ├── pyproject.toml                  # Poetry configuration and dependencies
 ├── README.md                       # This file
+├── config/
+│   ├── inference.yaml              # Inference pipeline config (events, smoothing, Stage B)
+│   ├── training.yaml               # Legacy training config
+│   ├── train_halpe_stage_a.yaml    # Stage A training (yolo11s-pose, weighted loss)
+│   ├── train_halpe_stage_b.yaml    # Stage B training (foot-crop safeguard)
+│   ├── keypoint_schema_halpe.yaml  # HALPE-26 keypoint schema + skeleton
+│   └── keypoint_schema_cmu.yaml    # CMU 6-keypoint schema
 ├── src/
 │   └── gait_analysis/
 │       ├── __init__.py             # Package exports
+│       ├── inference_pipeline.py   # Production pipeline (IC/TO, metrics)
+│       ├── gait_events.py          # Gait event detection + quality annotation
+│       ├── gait_metrics.py         # Step records + summary metrics
+│       ├── smoothing.py            # Temporal smoothing (Savitzky-Golay)
+│       ├── yolo_detector.py        # YOLO COCO and Lower Body detectors
+│       ├── weighted_pose_trainer.py # Custom trainer with per-keypoint loss weights
+│       ├── stage_b_refinement.py   # Stage B foot-crop refinement module
+│       ├── bout_detection.py       # Toe-walking bout detection
+│       ├── severity.py             # Toe-walking severity index
+│       ├── extended_metrics.py     # Proxy metrics (heel rise, plantarflexion, etc.)
+│       ├── stats_utils.py          # Descriptive stats, group comparisons
+│       ├── batch_pipeline.py       # Manifest-driven batch processing
+│       ├── eval/                   # Validation metrics (classification, ICC, ROC)
 │       ├── keypoint_config.py      # Keypoint configurations for each model
 │       ├── base_detector.py        # Abstract detector interface
-│       ├── yolo_detector.py        # YOLO COCO and Lower Body detectors
-│       ├── detector.py             # Legacy YOLO COCO detector
 │       ├── analyzer.py             # Basic gait analysis logic
-│       ├── angle_analyzer.py       # Enhanced analysis with angles
-│       ├── heel_toe_analyzer.py    # Analyzer for heel/toe keypoints
-│       ├── visualizer.py           # Basic visualization utilities
-│       ├── advanced_visualizer.py  # Enhanced visualization with angles
-│       ├── main.py                 # Basic CLI entry point
-│       ├── advanced_main.py        # Advanced CLI entry point
-│       └── multi_backend_main.py   # Multi-backend CLI entry point
-├── tests/
-│   ├── __init__.py
-│   ├── test_analyzer.py            # Basic analyzer tests
-│   ├── test_angle_analyzer.py      # Enhanced analyzer tests
-│   └── test_multi_backend.py       # Multi-backend tests
-├── analyses/                       # All analysis outputs (APP/, CLI/, OTHER/, each with YYYYMMDD_HHMM/)
-├── deploy/                         # Docker and Streamlit Cloud deployment (see deploy/README.md)
+│       └── ...                     # Legacy modules (angle_analyzer, visualizer, etc.)
+├── scripts/
+│   ├── infer_video.py              # Single-video inference (Stage A + optional B)
+│   ├── train_halpe_stage_a.py      # Stage A training script
+│   ├── train_halpe_stage_b.py      # Stage B training script
+│   ├── build_foot_crops.py         # Build foot-crop dataset for Stage B
+│   ├── convert_halpe26_to_yolo_pose.py  # HALPE COCO → YOLO format
+│   ├── download_halpe26.py         # Download HALPE-26 dataset
+│   ├── run_batch.py                # Batch pipeline (manifest-driven)
+│   ├── evaluate.py                 # Evaluation script (classification, agreement)
+│   └── summarize_quality.py        # Quality summary (all vs primary-only steps)
+├── tests/                          # Unit tests
+├── docs/
+│   ├── installation.md             # Installation guide
+│   ├── train_halpe.md              # Basic HALPE-26 training
+│   ├── train_halpe_stage_a.md      # Stage A training guide
+│   ├── train_halpe_stage_b.md      # Stage B training guide
+│   └── train_cmu.md                # CMU 6-keypoint training
+├── analyses/                       # All analysis outputs (APP/, CLI/, OTHER/)
+├── deploy/                         # Docker and Streamlit Cloud deployment
 ├── notebooks/
 │   └── exploration.ipynb           # Exploration notebook
 └── data/
@@ -83,7 +118,11 @@ gait_analysis/
 
 - **Installation & environment**: [docs/installation.md](docs/installation.md)
 - **Train on CMU 6‑keypoint foot dataset**: [docs/train_cmu.md](docs/train_cmu.md)
-- **Train on HALPE‑26 full‑body dataset**: [docs/train_halpe.md](docs/train_halpe.md)
+- **Train on HALPE‑26 full‑body dataset (basic)**: [docs/train_halpe.md](docs/train_halpe.md)
+- **Train Stage A (full-body, weighted loss)**: [docs/train_halpe_stage_a.md](docs/train_halpe_stage_a.md)
+- **Train Stage B (foot-crop safeguard)**: [docs/train_halpe_stage_b.md](docs/train_halpe_stage_b.md)
+- **Pipeline usage & gait metrics**: [PIPELINE_USAGE.md](PIPELINE_USAGE.md)
+- **Metric definitions**: [METRICS_DEFINITIONS.md](METRICS_DEFINITIONS.md)
 - **Deploy the Streamlit app** (Docker, Streamlit Community Cloud): [deploy/README.md](deploy/README.md)
 
 ## Usage
@@ -376,9 +415,9 @@ The system supports multiple pose estimation backends:
 #### YOLO COCO (17 keypoints)
 Standard YOLOv8-pose with COCO keypoints. Only provides ankle positions, requiring trajectory-based step classification.
 
-#### YOLO fine-tuned with HALPE dataset (26 keyponts) ⭐ RECOMMENDED
+#### YOLO fine-tuned with HALPE dataset (26 keypoints) ⭐ RECOMMENDED
 
-**TODO**: upload weights to make it available
+Fine-tuned `yolo11s-pose` with HALPE-26 full-body keypoints and per-keypoint loss weighting for ankles/heels/toes (Stage A).  Optional Stage B foot-crop safeguard for overlap / low-confidence scenarios.  See [`docs/train_halpe_stage_a.md`](docs/train_halpe_stage_a.md) and [`docs/train_halpe_stage_b.md`](docs/train_halpe_stage_b.md) for training instructions.
 
 
 
@@ -448,8 +487,10 @@ gait-analyze-multi video.mp4 --backend yolo_lower
 
 The project supports training with two keypoint setups:
 
-- **CMU 6 keypoints**: Foot keypoints (L/R heel, big toe, small toe) from the [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/). Download annotations and COCO 2017 images, then prepare labels with `scripts/download_foot_dataset.py` and `scripts/prepare_dataset.py`. Full steps: **`docs/train_cmu.md`**.
-- **HALPE 26 keypoints**: Full-body keypoints from [Halpe Full-Body](https://github.com/Fang-Haoshu/Halpe-FullBody) (26 body/foot keypoints). Download and convert with `scripts/download_halpe26.py` and `scripts/convert_halpe26_to_yolo_pose.py`. Full steps: **`docs/train_halpe.md`**.
+- **CMU 6 keypoints**: Foot keypoints (L/R heel, big toe, small toe) from the [CMU Human Foot Keypoint Dataset](https://cmu-perceptual-computing-lab.github.io/foot_keypoint_dataset/). Download annotations and COCO 2017 images, then prepare labels with `scripts/download_foot_dataset.py` and `scripts/prepare_dataset.py`. Full steps: **[`docs/train_cmu.md`](docs/train_cmu.md)**.
+- **HALPE 26 keypoints**: Full-body keypoints from [Halpe Full-Body](https://github.com/Fang-Haoshu/Halpe-FullBody) (26 body/foot keypoints). Download and convert with `scripts/download_halpe26.py` and `scripts/convert_halpe26_to_yolo_pose.py`. Full steps: **[`docs/train_halpe.md`](docs/train_halpe.md)**.
+  - **Stage A** (recommended): `yolo11s-pose` with per-keypoint loss weighting → **[`docs/train_halpe_stage_a.md`](docs/train_halpe_stage_a.md)**.
+  - **Stage B** (optional safeguard): Foot-crop model → **[`docs/train_halpe_stage_b.md`](docs/train_halpe_stage_b.md)**.
 
 ## Development
 

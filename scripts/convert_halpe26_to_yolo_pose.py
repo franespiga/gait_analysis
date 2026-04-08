@@ -295,16 +295,24 @@ def write_manifest(rows: list[dict[str, Any]], path: Path) -> None:
 
 def write_yaml(output_dir: Path, yaml_path: Path) -> None:
     """Write halpe26-pose.yaml for Ultralytics. path is relative to yaml location."""
+    # Left-right swap indices for horizontal flip augmentation (HALPE-26 order).
+    # Centre keypoints map to themselves; symmetric pairs swap.
+    # 0 Nose, 1 LEye↔2 REye, 3 LEar↔4 REar, 5 LSh↔6 RSh, 7 LEl↔8 REl,
+    # 9 LWr↔10 RWr, 11 LHip↔12 RHip, 13 LKn↔14 RKn, 15 LAn↔16 RAn,
+    # 17 Head, 18 Neck, 19 Hip, 20 LBigToe↔21 RBigToe,
+    # 22 LSmallToe↔23 RSmallToe, 24 LHeel↔25 RHeel
+    flip_idx = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15,
+                17, 18, 19, 21, 20, 23, 22, 25, 24]
     data = {
         "path": str(output_dir.resolve()),
         "train": "images/train",
         "val": "images/val",
         "kpt_shape": [NUM_KEYPOINTS, 3],
+        "flip_idx": flip_idx,
         "names": {0: "person"},
         "nc": 1,
     }
     with open(yaml_path, "w") as f:
-        f.write("# flip_idx: TODO - set left-right keypoint index pairs for horizontal flip (26 indices)\n")
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 

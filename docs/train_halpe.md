@@ -4,6 +4,14 @@ This guide explains how to go from raw **Halpe Full‑Body** data to a **26‑ke
 
 The 26‑keypoint subset follows the **AlphaPose HALPE‑26** convention: 26 body/foot keypoints (nose, eyes, ears, shoulders, elbows, wrists, hips, knees, ankles, head, neck, hip, and L/R big toe, small toe, heel).
 
+> **Two-stage training:** For the full paediatric gait recipe with per-keypoint
+> loss weighting and a two-stage inference safeguard, see:
+>
+> - **[docs/train_halpe_stage_a.md](train_halpe_stage_a.md)** — Stage A (full-body, yolo11s-pose, weighted loss)
+> - **[docs/train_halpe_stage_b.md](train_halpe_stage_b.md)** — Stage B (foot-crop safeguard)
+>
+> The sections below cover the *basic* single-stage workflow.
+
 ### 1. Dataset overview and sources
 
 - **Base dataset**: [Halpe Full‑Body](https://github.com/Fang-Haoshu/Halpe-FullBody)  

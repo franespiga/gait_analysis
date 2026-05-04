@@ -81,10 +81,15 @@ class YOLODetector(BaseDetector):
         if keypoints_data.xy is None or len(keypoints_data.xy) == 0:
             return None
         
-        # Get the first person's keypoints (highest confidence)
-        kpts_xy = keypoints_data.xy[0].cpu().numpy()
-        kpts_conf = (keypoints_data.conf[0].cpu().numpy() 
-                    if keypoints_data.conf is not None 
+        # Select person with highest mean keypoint confidence
+        if keypoints_data.conf is not None and len(keypoints_data.xy) > 1:
+            mean_confs = keypoints_data.conf.mean(dim=1).cpu().numpy()
+            best_idx = int(np.argmax(mean_confs))
+        else:
+            best_idx = 0
+        kpts_xy = keypoints_data.xy[best_idx].cpu().numpy()
+        kpts_conf = (keypoints_data.conf[best_idx].cpu().numpy()
+                    if keypoints_data.conf is not None
                     else np.ones(len(kpts_xy)))
         
         config = self._keypoint_config

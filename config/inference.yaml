@@ -4,7 +4,7 @@
 # Model
 model_path: models/foot_pose/best.pt  # or yolov8m-pose.pt for COCO + custom head
 backend: yolo_foot  # or yolo_coco / yolo_lower for legacy
-device: auto
+device: cpu
 conf_threshold: 0.25
 iou_threshold: 0.7
 
@@ -37,6 +37,16 @@ contact:
   stabilization_delta_ms: 50
   # Flat: both stabilize within this window (ms)
   flat_window_ms: 80
+  # Velocity threshold (px/frame) below which a keypoint is "on ground" for flat check
+  flat_stable_velocity: 1.5
+  # Inter-foot distance threshold (px). If both heel and toe distances are below this,
+  # event is marked as overlap/occluded and excluded from primary contact metrics.
+  overlap_min_interfoot_px: 40
+
+# Toe-walking bout detection
+bouts:
+  # Minimum consecutive forefoot-first contacts to form a bout
+  min_consecutive: 2
 
 # Calibration for step length and speed (m)
 # Options: none | reference_height_px | scale_factor
@@ -45,6 +55,20 @@ calibration:
   reference_height_px: null  # e.g. 200 (pixels for known height in frame)
   reference_height_m: 1.7   # known height in meters
   scale_factor_m_per_px: null  # direct: meters per pixel
+
+# Two-stage inference (Stage B foot safeguard)
+# When enabled, if Stage A produces overlap / low foot confidence flags,
+# a second model runs on cropped foot ROIs to refine foot keypoints.
+stage_b:
+  enabled: false
+  model_path: models/halpe26_stage_b/best.pt
+  # Trigger thresholds — Stage B runs if ANY condition fires
+  trigger_min_foot_conf: 0.3      # mean foot-kpt confidence below this
+  trigger_overlap_flag: true      # run Stage B when overlap_flag is set
+  trigger_max_jitter_px: 15.0     # foot keypoint jitter above this (px/frame)
+  crop_margin: 0.4                # margin fraction around ankle span for crop
+  crop_min_px: 128                # minimum crop side (pixels)
+  crop_max_px: 384                # maximum crop side (pixels)
 
 # Output (default "results" → scripts write to analyses/CLI/YYYYMMDD_HHMM; override with --output-dir to set a custom run dir)
 output_dir: results

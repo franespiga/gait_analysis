@@ -55,12 +55,30 @@ from .gait_metrics import StepRecord, GaitSummary, build_step_records, compute_s
 from .smoothing import smooth_keypoints, fps_aware_window_length
 from .inference_pipeline import (
     PipelineConfig,
+    FullPipelineResult,
     run_pipeline,
+    run_full_pipeline,
     select_main_person,
     raw_to_six_keypoints,
     events_to_dataframe,
     step_records_to_dataframe,
 )
+
+# Extended pipeline modules
+from .bout_detection import ToeWalkingBout, BoutSummary, detect_toe_walking_bouts, compute_bout_summary
+from .severity import SeverityScore, compute_severity_index
+from .extended_metrics import (
+    HeelRiseRecord,
+    PlantarflexionRecord,
+    FootStrikeVariability,
+    COMSwayProxy,
+    compute_heel_rise_timing,
+    compute_plantarflexion_proxy,
+    compute_foot_strike_variability,
+    compute_com_sway_proxy,
+)
+from .stats_utils import descriptive, compare_groups, cohens_d, aggregate_trials
+from .stage_b_refinement import StageBConfig, needs_stage_b, refine_foot_keypoints
 
 __all__ = [
     # Legacy
@@ -115,10 +133,35 @@ __all__ = [
     "smooth_keypoints",
     "fps_aware_window_length",
     "PipelineConfig",
+    "FullPipelineResult",
     "run_pipeline",
+    "run_full_pipeline",
     "select_main_person",
     "raw_to_six_keypoints",
     "events_to_dataframe",
     "step_records_to_dataframe",
+    # Extended pipeline
+    "ToeWalkingBout",
+    "BoutSummary",
+    "detect_toe_walking_bouts",
+    "compute_bout_summary",
+    "SeverityScore",
+    "compute_severity_index",
+    "HeelRiseRecord",
+    "PlantarflexionRecord",
+    "FootStrikeVariability",
+    "COMSwayProxy",
+    "compute_heel_rise_timing",
+    "compute_plantarflexion_proxy",
+    "compute_foot_strike_variability",
+    "compute_com_sway_proxy",
+    "descriptive",
+    "compare_groups",
+    "cohens_d",
+    "aggregate_trials",
+    # Stage B refinement
+    "StageBConfig",
+    "needs_stage_b",
+    "refine_foot_keypoints",
 ]
 

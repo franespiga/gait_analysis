@@ -7,11 +7,14 @@ Handles missing keypoints via confidence gating and interpolation.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 import numpy as np
 from scipy.signal import savgol_filter
 from scipy.interpolate import interp1d
+
+logger = logging.getLogger(__name__)
 
 
 def smooth_keypoints(
@@ -60,10 +63,9 @@ def smooth_keypoints(
             try:
                 out[:, n, 0] = savgol_filter(x, w, polyorder)
                 out[:, n, 1] = savgol_filter(y, w, polyorder)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Smoothing failed for keypoint %d: %s — using raw data", n, exc)
         else:
-            # Interpolate missing, then smooth valid segment or full after fill
             t = np.arange(T, dtype=float)
             if np.sum(valid) >= w:
                 x_fill = _fill_missing(t, x, valid)
@@ -73,8 +75,8 @@ def smooth_keypoints(
                     sy = savgol_filter(y_fill, w, polyorder)
                     out[:, n, 0] = np.where(valid, sx, x)
                     out[:, n, 1] = np.where(valid, sy, y)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Smoothing failed for keypoint %d (partial): %s — using raw data", n, exc)
     return out
 
 
